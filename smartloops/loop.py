@@ -12,7 +12,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from smartloops import db, audit, wakeup, stuck, drift, journal, notify
-from smartloops import executor
+from smartloops import executor, recovery
 
 
 def run_cycle() -> list[dict]:
@@ -77,10 +77,29 @@ def _check_project(name: str) -> dict:
     notified = False
     spawn_result = None
 
-    if stuck_result.get("stuck") and stuck_result.get("severity") in ("high", "critical"):
-        action = "Stuck detected — notifying human"
-        notify.send_message(name, f"STUCK ({stuck_result['severity']})\n" + "\n".join(s["detail"] for s in stuck_result["signals"]))
-        notified = True
+    if stuck_result.get("stuck"):
+        severity = stuck_result.get("severity", "low")
+        stuck_details = "\n".join(s["detail"] for s in stuck_result.get("signals", []))
+
+        if severity == "critical":
+            # Level 4: pause project and alert human
+            recovery_result = recovery.pause_and_alert(name, stuck_details)
+            action = f"STUCK ({severity}) — paused project, alerted human"
+            notified = True
+        elif severity == "high":
+            # Level 2: instruct Claude to re-plan
+            recovery.instruct_replan(path, stuck_details)
+            # Level 3: notify human
+            recovery.notify_human(name, f"STUCK ({severity})\n{stuck_details}")
+            action = f"STUCK ({severity}) — re-plan instructed, human notified"
+            notified = True
+        elif severity == "medium":
+            # Level 1: instruct Claude to retry
+            recovery.instruct_retry(path, stuck_details)
+            action = f"STUCK ({severity}) — retry instructed"
+        else:
+            # low severity — just log
+            action = f"STUCK ({severity}) — monitoring"
     elif drift_result.get("drifted"):
         action = "Drift detected — review recommended"
         notify.send_message(name, f"DRIFT DETECTED\n{drift_result.get('suggestion', '')}")

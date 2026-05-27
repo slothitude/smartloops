@@ -80,11 +80,11 @@
 - [x] `notify.py` — Telegram bot integration
   - [x] Send message via Telegram Bot API (token: configured)
   - [x] Only for: blocked, repeated failures, human decision needed, project complete
-- [ ] Recovery system
-  - [ ] Level 1: Instruct Claude to retry (write to claude instruction file)
-  - [ ] Level 2: Instruct Claude to re-plan (write to claude instruction file)
-  - [ ] Level 3: Notify human via Telegram
-  - [ ] Level 4: Pause project, notify human
+- [x] Recovery system
+  - [x] Level 1: Instruct Claude to retry (write to claude instruction file)
+  - [x] Level 2: Instruct Claude to re-plan (write to claude instruction file)
+  - [x] Level 3: Notify human via Telegram
+  - [x] Level 4: Pause project, notify human
 - [x] MCP tools (Phase 4)
   - [x] `notify_human(name, message)` — send Telegram notification
   - [x] `pause_project(name)` — pause all wake-ups
