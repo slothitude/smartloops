@@ -64,8 +64,23 @@ def instruct_replan(project_path: str, message: str) -> dict:
 
 
 def notify_human(name: str, message: str) -> dict:
-    """Level 3 — Send Telegram alert (delegates to notify.send_message)."""
-    return notify.send_message(name, message)
+    """Level 3 — Send Telegram alert and interactive question."""
+    notify_result = notify.send_message(name, message)
+
+    # Also ask an interactive question if bot is configured
+    try:
+        from smartloops import bot
+        if bot.is_configured():
+            bot.ask_question(
+                name,
+                f"Recovery needed: {message[:200]}",
+                ["re-plan", "pause", "ignore"],
+                context="recovery",
+            )
+    except Exception:
+        pass  # Question failure shouldn't block the alert
+
+    return notify_result
 
 
 def pause_and_alert(name: str, message: str) -> dict:

@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from smartloops import db, audit, wakeup, stuck, drift, journal, notify
 from smartloops import executor, recovery
+from config import TELEGRAM_CHAT_ID
 
 
 def run_cycle() -> list[dict]:
@@ -30,11 +31,102 @@ def run_cycle() -> list[dict]:
         if not wakeup.should_wake_now(name):
             continue
 
-        # Run full check cycle
-        result = _check_project(name)
-        results.append(result)
+        # Run full check cycle — one bad project shouldn't stop others
+        try:
+            result = _check_project(name)
+            results.append(result)
+        except Exception as e:
+            results.append({"project": name, "error": f"Cycle failed: {e}"})
+
+    # Poll Telegram commands and question responses
+    try:
+        from smartloops import bot
+        if bot.is_configured():
+            messages, callbacks = bot.poll()
+            if messages or callbacks:
+                bot.process_commands(messages, callbacks)
+            if callbacks:
+                responses = bot.check_responses(callbacks)
+                for resp in responses:
+                    _handle_question_response(resp)
+            # Check free-text replies for open-ended questions
+            if messages:
+                text_responses = bot.check_text_replies(messages)
+                for resp in text_responses:
+                    _handle_question_response(resp)
+    except Exception:
+        pass  # Bot failure must not break the cycle
 
     return results
+
+
+def _handle_question_response(resp: dict):
+    """Act on a user's answer to a pending question."""
+    from smartloops import db
+    project = resp["project"]
+    answer = resp["answer"]
+    context = resp.get("context", "")
+
+    # Edit the question message to show the answer
+    chat_id = resp.get("chat_id")
+    message_id = resp.get("message_id")
+    if chat_id and message_id:
+        try:
+            from smartloops import bot
+            bot.edit_message(chat_id, message_id,
+                             f"Question #{resp['id']} for *{project}*:\n"
+                             f"~~{resp['question']}~~\n\n"
+                             f"Answer: *{answer}*")
+        except Exception:
+            pass
+
+    if context == "drift_detected":
+        if answer in ("re-plan", "yes"):
+            proj = db.get_project(project)
+            if proj:
+                from smartloops import recovery
+                recovery.instruct_replan(proj["path"], "User confirmed re-plan via Telegram")
+        elif answer in ("pause", "no"):
+            db.update_project(project, status="paused")
+
+    elif context == "stuck_critical":
+        if answer in ("resume", "yes"):
+            db.update_project(project, status="active")
+        elif answer in ("pause", "no"):
+            db.update_project(project, status="paused")
+
+    elif context == "recovery":
+        if answer == "re-plan":
+            proj = db.get_project(project)
+            if proj:
+                from smartloops import recovery
+                recovery.instruct_replan(proj["path"], "User requested re-plan via Telegram")
+        elif answer == "pause":
+            db.update_project(project, status="paused")
+        # "ignore" — do nothing
+
+    elif context.startswith("worker_question:"):
+        # Extract project name from context tag
+        proj = db.get_project(project)
+        if proj:
+            path = proj["path"]
+            # Kill the old worker if still running
+            if executor.is_claude_running(path):
+                executor.kill_worker(path)
+            # Clear any stale answer file
+            executor.clear_worker_answer(path)
+            # Re-spawn with the human's answer injected
+            # Read the original task from the question context or spawn info
+            spawn_info = executor._read_spawn_info(path)
+            task = spawn_info.get("task", "Continue previous task") if spawn_info else "Continue previous task"
+            executor.spawn_claude(path, task, prior_answer=answer)
+
+    # Acknowledge the response
+    from smartloops import bot
+    bot.send_reply(
+        str(TELEGRAM_CHAT_ID) if TELEGRAM_CHAT_ID else "",
+        f"Received: {answer} for {project} (Q#{resp['id']})",
+    )
 
 
 def _check_project(name: str) -> dict:
@@ -43,16 +135,28 @@ def _check_project(name: str) -> dict:
     path = project["path"]
 
     # 1. Audit
-    audit_result = audit.audit_project(name)
+    try:
+        audit_result = audit.audit_project(name)
+    except Exception as e:
+        audit_result = {"error": f"Audit failed: {e}"}
 
     # 2. Stuck detection
-    stuck_result = stuck.detect_stuck(name)
+    try:
+        stuck_result = stuck.detect_stuck(name)
+    except Exception as e:
+        stuck_result = {"error": f"Stuck detection failed: {e}", "stuck": False, "signals": [], "severity": "none"}
 
     # 3. Drift detection
-    drift_result = drift.detect_drift(name)
+    try:
+        drift_result = drift.detect_drift(name)
+    except Exception as e:
+        drift_result = {"error": f"Drift detection failed: {e}", "drifted": False, "suggestion": ""}
 
     # 4. Calculate next wake-up
-    wake_result = wakeup.calculate_next_wakeup(name)
+    try:
+        wake_result = wakeup.calculate_next_wakeup(name)
+    except Exception as e:
+        wake_result = {"error": f"Wake-up calc failed: {e}", "minutes": 30, "timestamp": "unknown", "reason": "error"}
 
     # 5. Build summary for Ralph journal
     observed_parts = []
@@ -121,25 +225,49 @@ def _check_project(name: str) -> dict:
             spawn_result = executor.spawn_claude(path, next_task)
             action = f"SPAWNED: {next_task}"
 
+    # 5b. Check for worker question (worker needs human input)
+    worker_q = executor.read_worker_question(path)
+    if worker_q:
+        try:
+            from smartloops import bot
+            if bot.is_configured():
+                choices = worker_q.get("choices", [])
+                bot.ask_question(
+                    project=name,
+                    question=worker_q.get("question", "Worker needs input"),
+                    choices=choices,
+                    context=f"worker_question:{name}",
+                )
+                executor.clear_worker_question(path)
+                action = "WORKER QUESTION sent to Telegram"
+        except Exception:
+            pass  # Bot failure — question stays on disk for next cycle
+
     # Write Ralph journal entry
     next_wake = wake_result.get("timestamp", "unknown") if "error" not in wake_result else "unknown"
     reason = wake_result.get("reason", "scheduled") if "error" not in wake_result else "error"
 
-    journal.append_entry(
-        project_path=path,
-        observed=observed,
-        action=action,
-        next_wake=next_wake,
-        reason=reason,
-    )
+    try:
+        journal.append_entry(
+            project_path=path,
+            observed=observed,
+            action=action,
+            next_wake=next_wake,
+            reason=reason,
+        )
+    except Exception:
+        pass  # Disk error — don't lose the cycle result
 
     # Record wake in DB
-    db.add_wake_record(
-        project_id=project["id"],
-        reason=reason,
-        action_taken=action,
-        next_wakeup=next_wake,
-    )
+    try:
+        db.add_wake_record(
+            project_id=project["id"],
+            reason=reason,
+            action_taken=action,
+            next_wakeup=next_wake,
+        )
+    except Exception:
+        pass  # DB error — still return results
 
     return {
         "project": name,

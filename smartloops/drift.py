@@ -22,7 +22,10 @@ def detect_drift(name: str) -> dict:
         return {"drifted": False, "reason": "No goal defined, cannot detect drift"}
 
     # Get Claude's recent tasks
-    log_entries = claude_log.parse_entries(path)
+    try:
+        log_entries = claude_log.parse_entries(path)
+    except Exception:
+        return {"drifted": False, "reason": "Could not parse Claude log"}
     if not log_entries:
         return {"drifted": False, "reason": "No Claude activity to analyze"}
 

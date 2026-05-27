@@ -16,6 +16,8 @@ CLAUDE_LOG_FILE = "claude_log.md"
 RALPH_JOURNAL_FILE = "ralph_journal.md"
 WORLD_MODEL_FILE = "WORLD_MODEL.json"
 NEXT_WAKEUP_FILE = "next_wakeup.json"
+WORKER_QUESTION_FILE = "worker_question.json"
+WORKER_ANSWER_FILE = "worker_answer.json"
 
 # Wake-up defaults (minutes)
 WAKE_SIMPLE = 10
@@ -26,6 +28,10 @@ WAKE_INACTIVE = 1440  # 24 hours
 
 # GitHub API (read-only, optional)
 GITHUB_TOKEN = os.environ.get("SMARTLOOPS_GITHUB_TOKEN", "")
+
+# Bot state files
+BOT_STATE_FILE = os.path.join(DATA_DIR, "bot_state.json")
+PENDING_QUESTIONS_FILE = os.path.join(DATA_DIR, "pending_questions.json")
 
 # Stuck detection thresholds
 STUCK_NO_COMMIT_HOURS = 4

@@ -6,6 +6,7 @@ the stdio transport during module initialization.
 
 import sys
 import os
+import time
 
 # Add project root to path so config is importable
 sys.path.insert(0, os.path.dirname(__file__))
@@ -430,6 +431,76 @@ def worker_status(name: str) -> str:
             lines.append(f"\n--- worker.log (last {len(tail)} lines) ---")
             lines.extend(tail)
 
+    return "\n".join(lines)
+
+
+# --- Interactive Questions ---
+
+@mcp.tool()
+def ask_human(question: str, choices: str = "", project: str = "") -> str:
+    """Ask a question via Telegram. For the current interactive Claude session to relay questions.
+    Returns immediately with the question ID.
+
+    Args:
+        question: The question to ask the human.
+        choices: Comma-separated options (e.g. "yes,no"). Empty = free text.
+        project: Optional project name for context.
+    """
+    from smartloops import bot
+    if not bot.is_configured():
+        return "Error: Telegram bot not configured (set SMARTLOOPS_TELEGRAM_TOKEN and SMARTLOOPS_TELEGRAM_CHAT_ID)."
+
+    choice_list = [c.strip() for c in choices.split(",") if c.strip()] if choices else []
+    project_name = project or "claude-session"
+
+    result = bot.ask_question(
+        project=project_name,
+        question=question,
+        choices=choice_list,
+        context="interactive",
+    )
+
+    if result.get("sent"):
+        qtype = "free text" if not choice_list else f"choices: {', '.join(choice_list)}"
+        return f"Question #{result['id']} sent to Telegram ({qtype}). Use check_answer({result['id']}) to see if answered."
+    return f"Failed to send question: {result.get('detail', 'unknown error')}"
+
+
+@mcp.tool()
+def check_answer(question_id: int = 0) -> str:
+    """Check if a previously asked question has been answered.
+    Returns pending question status.
+
+    Args:
+        question_id: The question ID to check. 0 = check all pending.
+    """
+    from smartloops import bot
+    questions = bot._read_json(bot.PENDING_QUESTIONS_FILE, [])
+
+    if not questions:
+        return "No pending questions."
+
+    if question_id:
+        matches = [q for q in questions if q["id"] == question_id]
+        if not matches:
+            return f"Question #{question_id} has been answered (no longer pending)."
+        q = matches[0]
+        age_h = (time.time() - q.get("created", 0)) / 3600
+        qtype = "open-ended" if q.get("open_ended") else f"choices: {', '.join(q.get('choices', []))}"
+        return (
+            f"Question #{q['id']} is still PENDING.\n"
+            f"Project: {q.get('project', '?')}\n"
+            f"Question: {q.get('question', '')}\n"
+            f"Type: {qtype}\n"
+            f"Asked: {age_h:.1f}h ago"
+        )
+
+    # List all pending
+    lines = [f"{len(questions)} pending question(s):"]
+    for q in questions:
+        age_h = (time.time() - q.get("created", 0)) / 3600
+        qtype = "open" if q.get("open_ended") else ",".join(q.get("choices", []))
+        lines.append(f"  Q#{q['id']} ({q.get('project', '?')}): {q.get('question', '')[:60]} [{qtype}] {age_h:.1f}h ago")
     return "\n".join(lines)
 
 
