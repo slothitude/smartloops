@@ -2,7 +2,6 @@
 
 import os
 import json
-import subprocess
 from datetime import datetime
 
 from config import SMARTLOOPS_DIR, WORLD_MODEL_FILE
@@ -134,16 +133,11 @@ def _read_claude_md(project_path: str) -> str:
 def _read_git_log(project_path: str) -> list[str]:
     """Get last 10 git commit subjects."""
     try:
-        result = subprocess.run(
-            ["git", "log", "--oneline", "-10"],
-            cwd=project_path,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            return [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        stream = os.popen(f"git -C \"{project_path}\" log --oneline -10")
+        output = stream.read()
+        if stream.close() is None or output.strip():
+            return [line.strip() for line in output.strip().splitlines() if line.strip()]
+    except OSError:
         pass
     return []
 
