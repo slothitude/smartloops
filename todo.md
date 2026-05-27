@@ -98,7 +98,7 @@
 - [x] Performance: ensure audits complete in < 5 seconds
 - [x] Config file for Telegram token, GitHub token, notification preferences
 - [x] MCP config snippet for `.claude/.mcp.json`
-- [ ] README.md with setup instructions
+- [x] README.md with setup instructions
 - [ ] Install as pip package or standalone script
 
 ## Phase 6 — Executor

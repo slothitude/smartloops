@@ -13,3 +13,8 @@ Task: Edge cases: corrupt log files, missing `.smartloops/` dir, offline git, no
 Status: completed
 Confidence: 90%
 Next: Performance: ensure audits complete in < 5 seconds
+## 2026-05-28T22:30:00
+Task: README.md with setup instructions
+Status: completed
+Confidence: 95%
+Next: Install as pip package or standalone script
