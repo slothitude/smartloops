@@ -31,10 +31,13 @@ def spawn_claude(project_path: str, task_prompt: str) -> dict:
 
     Returns dict with pid, command, status.
     """
-    # Build the claude command
+    # Build the claude command — use full path for scheduled task context
+    claude_exe = os.path.join(os.path.expanduser("~"), ".local", "bin", "claude.exe")
+    if not os.path.isfile(claude_exe):
+        claude_exe = "claude"  # fallback to PATH
     prompt = f"Work on this task from your todo list: {task_prompt}"
     cmd = [
-        "claude",
+        claude_exe,
         "-p", prompt,
         "--output-format", "json",
     ]
