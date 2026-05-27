@@ -29,6 +29,9 @@ def pick_next_task(project_path: str) -> str | None:
 def spawn_claude(project_path: str, task_prompt: str) -> dict:
     """Launch Claude Code in the project directory as a detached background process.
 
+    Only used when running standalone (scheduled task). When called from Claude Code,
+    use subagent_spawn() instead — it returns a task description for the Agent tool.
+
     Returns dict with pid, command, status.
     """
     # Build the claude command — use full path for scheduled task context
@@ -42,7 +45,7 @@ def spawn_claude(project_path: str, task_prompt: str) -> dict:
         "--output-format", "json",
     ]
 
-    # Log output to .smartloops/worker.log instead of discarding
+    # Log output to .smartloops/worker.log
     sl_dir = os.path.join(project_path, SMARTLOOPS_DIR)
     os.makedirs(sl_dir, exist_ok=True)
     log_path = os.path.join(sl_dir, "worker.log")
@@ -57,27 +60,48 @@ def spawn_claude(project_path: str, task_prompt: str) -> dict:
     }
 
     if sys.platform == "win32":
-        # CREATE_NO_WINDOW = 0x08000000 — fully detached, no console window
         kwargs["creationflags"] = 0x08000000
     else:
-        # POSIX: start new session
         kwargs["start_new_session"] = True
 
     proc = subprocess.Popen(cmd, **kwargs)
     pid = proc.pid
 
-    # Write spawn.json for PID tracking
     _write_spawn_info(project_path, {
         "pid": pid,
         "task": task_prompt,
         "started": _utc_now(),
         "status": "running",
+        "mode": "subprocess",
     })
 
     return {
         "pid": pid,
         "task": task_prompt,
         "status": "spawned",
+        "mode": "subprocess",
+    }
+
+
+def subagent_spawn(project_path: str, task_prompt: str) -> dict:
+    """Mark a task as needing a subagent spawn. Returns task info for Claude to use with Agent tool.
+
+    Call this from MCP context — the calling Claude then uses the Agent tool
+    to run the task as a visible subagent in the TUI.
+    """
+    _write_spawn_info(project_path, {
+        "pid": None,
+        "task": task_prompt,
+        "started": _utc_now(),
+        "status": "running",
+        "mode": "subagent",
+    })
+
+    return {
+        "task": task_prompt,
+        "status": "needs_agent",
+        "mode": "subagent",
+        "instruction": f"Spawn a subagent to work on: {task_prompt}",
     }
 
 

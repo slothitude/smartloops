@@ -86,14 +86,14 @@ def _check_project(name: str) -> dict:
         notify.send_message(name, f"DRIFT DETECTED\n{drift_result.get('suggestion', '')}")
         notified = True
     else:
-        # 4. Execution — spawn Claude if there's work to do
+        # 4. Execution — spawn subagent (MCP context) or subprocess (standalone)
         next_task = audit_result.get("next_task")
         has_todos = audit_result.get("world_model", {}).get("todo", {}).get("remaining", 0) > 0
         already_running = executor.is_claude_running(path)
 
         if has_todos and next_task and not already_running and stuck_result.get("severity") not in ("high", "critical"):
-            spawn_result = executor.spawn_claude(path, next_task)
-            action = f"Spawned Claude (PID {spawn_result['pid']}) to work on: {next_task}"
+            spawn_result = executor.subagent_spawn(path, next_task)
+            action = f"NEEDS_AGENT: {next_task}"
 
     # Write Ralph journal entry
     next_wake = wake_result.get("timestamp", "unknown") if "error" not in wake_result else "unknown"
