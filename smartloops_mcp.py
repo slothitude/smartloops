@@ -1,6 +1,7 @@
 """Smart Loops MCP — Intelligent wake-up scheduler for Claude Code.
 
-Entry point for the MCP server.
+Entry point for the MCP server. Uses lazy imports to avoid blocking
+the stdio transport during module initialization.
 """
 
 import sys
@@ -10,7 +11,10 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from mcp.server.fastmcp import FastMCP
-from smartloops import db, audit, claude_log, journal, wakeup, stuck, drift, loop, notify
+
+# Only import db at top level — it's needed by most tools and only does SQLite init.
+# All other modules are imported lazily inside their tool functions.
+from smartloops import db
 
 mcp = FastMCP("smartloops")
 
@@ -106,11 +110,28 @@ def project_status(name: str) -> str:
     return "\n".join(lines)
 
 
+@mcp.tool()
+def delete_project(name: str) -> str:
+    """Delete a project and all its audit/wake history from Smart Loops."""
+    project = db.get_project(name)
+    if not project:
+        return f"Project '{name}' not found."
+
+    conn = db._get_conn()
+    conn.execute("DELETE FROM wake_history WHERE project_id = ?", (project["id"],))
+    conn.execute("DELETE FROM audits WHERE project_id = ?", (project["id"],))
+    conn.execute("DELETE FROM projects WHERE id = ?", (project["id"],))
+    conn.commit()
+    conn.close()
+    return f"Deleted project '{name}' and all its history."
+
+
 # --- Audit ---
 
 @mcp.tool()
 def audit_project(name: str) -> str:
     """Run a full project audit. Reads todo, CLAUDE.md, git log, Claude's log."""
+    from smartloops import audit
     result = audit.audit_project(name)
     if "error" in result:
         return f"Error: {result['error']}"
@@ -130,6 +151,7 @@ def audit_project(name: str) -> str:
 @mcp.tool()
 def read_claude_log(name: str, limit: int = 10) -> str:
     """Read Claude's work log for a project."""
+    from smartloops import claude_log
     project = db.get_project(name)
     if not project:
         return f"Project '{name}' not found."
@@ -160,6 +182,7 @@ def read_claude_log(name: str, limit: int = 10) -> str:
 @mcp.tool()
 def read_ralph_journal(name: str, limit: int = 10) -> str:
     """Read Ralph's observation journal for a project."""
+    from smartloops import journal
     project = db.get_project(name)
     if not project:
         return f"Project '{name}' not found."
@@ -189,6 +212,7 @@ def calculate_next_wakeup(name: str) -> str:
     Scores based on task complexity, confidence, risk, and progress.
     Writes next_wakeup.json to the project's .smartloops/ dir.
     """
+    from smartloops import wakeup
     result = wakeup.calculate_next_wakeup(name)
     if "error" in result:
         return f"Error: {result['error']}"
@@ -207,6 +231,7 @@ def calculate_next_wakeup(name: str) -> str:
 @mcp.tool()
 def detect_stuck(name: str) -> str:
     """Check if a project is stuck. Looks for repeated errors, no commits, low confidence."""
+    from smartloops import stuck
     result = stuck.detect_stuck(name)
     if "error" in result:
         return f"Error: {result['error']}"
@@ -228,6 +253,7 @@ def detect_stuck(name: str) -> str:
 @mcp.tool()
 def detect_drift(name: str) -> str:
     """Check if a project has drifted from its goal. Compares current work vs registered goal."""
+    from smartloops import drift
     result = drift.detect_drift(name)
     if "error" in result:
         return f"Error: {result['error']}"
@@ -283,14 +309,13 @@ def resume_project(name: str) -> str:
 @mcp.tool()
 def complete_project(name: str) -> str:
     """Mark a project as complete — stops wake-ups, writes final Ralph journal entry."""
+    from smartloops import journal
     project = db.get_project(name)
     if not project:
         return f"Project '{name}' not found."
     if project["status"] == "complete":
         return f"Project '{name}' is already complete."
 
-    # Write final journal entry
-    from smartloops import journal
     journal.append_entry(
         project_path=project["path"],
         observed=f"Project completed. Goal: {project['goal']}",
@@ -308,6 +333,7 @@ def complete_project(name: str) -> str:
 @mcp.tool()
 def notify_human(name: str, message: str) -> str:
     """Send a Telegram notification about a project. Requires SMARTLOOPS_TELEGRAM_TOKEN and SMARTLOOPS_TELEGRAM_CHAT_ID env vars."""
+    from smartloops import notify
     result = notify.send_message(name, message)
     if result["success"]:
         return f"Notification sent for '{name}'."
@@ -319,6 +345,7 @@ def notify_human(name: str, message: str) -> str:
 @mcp.tool()
 def run_cycle() -> str:
     """Run one wake-up cycle for all active projects. Checks which projects are due and runs audit/stuck/drift on them."""
+    from smartloops import loop
     results = loop.run_cycle()
     if not results:
         return "No projects due for wake-up."
