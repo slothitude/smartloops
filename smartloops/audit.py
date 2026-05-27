@@ -3,10 +3,14 @@
 import os
 import json
 import subprocess
+import time
 from datetime import datetime
 
 from config import SMARTLOOPS_DIR, WORLD_MODEL_FILE
 from smartloops import db, claude_log, journal, git, github
+
+# Hard cap on audit duration (seconds)
+AUDIT_TIMEOUT = 5.0
 
 
 def audit_project(name: str) -> dict:
@@ -27,19 +31,25 @@ def audit_project(name: str) -> dict:
     sl_dir = os.path.join(path, SMARTLOOPS_DIR)
     os.makedirs(sl_dir, exist_ok=True)
 
+    t_start = time.monotonic()
+
     # Gather state from all sources — each can fail independently
     todo_data = _read_todo(path)
     next_task = _get_next_task(path)
     claude_md = _read_claude_md(path)
     git_data = _read_git_log(path)
 
+    # Skip expensive calls if we're already past budget
+    elapsed = time.monotonic() - t_start
+
     try:
-        git_velocity = git.get_velocity(path)
+        git_velocity = git.get_velocity(path) if elapsed < AUDIT_TIMEOUT else {"is_repo": False, "commits_day": 0, "commits_week": 0, "velocity_trend": "stable"}
     except Exception:
         git_velocity = {"is_repo": False, "commits_day": 0, "commits_week": 0, "velocity_trend": "stable"}
 
+    elapsed = time.monotonic() - t_start
     try:
-        github_data = github.get_github_summary(path)
+        github_data = github.get_github_summary(path) if elapsed < AUDIT_TIMEOUT else {"has_github": False}
     except Exception:
         github_data = {"has_github": False}
 

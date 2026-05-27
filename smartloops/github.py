@@ -52,7 +52,7 @@ def _api_get(path: str) -> dict | list | None:
 
     req = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:
             return json.loads(resp.read().decode())
     except (urllib.error.URLError, OSError, json.JSONDecodeError, TimeoutError, ConnectionError):
         return None
@@ -66,7 +66,7 @@ def _gh_cli(args: list[str]) -> str | None:
             env["GH_TOKEN"] = GITHUB_TOKEN
         result = subprocess.run(
             ["gh"] + args,
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, timeout=5,
             stdin=subprocess.DEVNULL, env=env,
             encoding="utf-8", errors="replace",
         )
@@ -183,17 +183,45 @@ def get_open_prs(project_path: str) -> list[dict]:
     return []
 
 
-def get_github_summary(project_path: str) -> dict:
+def get_github_summary(project_path: str, fast: bool = True) -> dict:
     """Get a combined GitHub summary for audit integration.
 
     Returns dict with: open_issues, open_prs, milestones, has_github.
     Safely handles no github repo, offline network, and API failures.
+
+    Args:
+        fast: If True (default), only fetch counts via a single repo API call.
+              If False, fetch full issue/PR/milestone lists (slower).
     """
     slug = _get_repo_slug(project_path)
     if not slug:
         return {"has_github": False}
 
-    # All three calls can fail independently — don't let one kill the summary
+    if fast:
+        # Fast path: single repo API call for counts only
+        data = _api_get(f"/repos/{slug}")
+        if isinstance(data, dict):
+            return {
+                "has_github": True,
+                "repo": slug,
+                "open_issues": [],
+                "open_issues_count": data.get("open_issues_count", 0),
+                "open_prs": [],
+                "open_prs_count": 0,  # GitHub API doesn't return PR count on repo endpoint
+                "milestones": [],
+            }
+        # API failed — still report has_github with zero counts
+        return {
+            "has_github": True,
+            "repo": slug,
+            "open_issues": [],
+            "open_issues_count": 0,
+            "open_prs": [],
+            "open_prs_count": 0,
+            "milestones": [],
+        }
+
+    # Slow path: fetch full lists (for status_report)
     issues = []
     prs = []
     milestones = []
