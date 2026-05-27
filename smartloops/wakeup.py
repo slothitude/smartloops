@@ -27,13 +27,19 @@ def calculate_next_wakeup(name: str) -> dict:
     pid = project["id"]
     path = project["path"]
 
-    # Gather inputs
-    log_entries = claude_log.parse_entries(path)
+    # Gather inputs — each can fail independently
+    try:
+        log_entries = claude_log.parse_entries(path)
+    except Exception:
+        log_entries = []
     latest_log = log_entries[-1] if log_entries else None
     latest_audit = db.get_latest_audit(pid)
     wake_history = db.get_wake_history(pid, limit=5)
 
-    confidence = latest_log.get("confidence", 50) if latest_log else 50
+    try:
+        confidence = int(latest_log.get("confidence", 50)) if latest_log else 50
+    except (ValueError, TypeError):
+        confidence = 50
     claude_status = (latest_log.get("status") or "unknown").lower() if latest_log else "no_log"
 
     # --- Scoring ---
@@ -95,8 +101,11 @@ def calculate_next_wakeup(name: str) -> dict:
     elif latest_audit and latest_audit.get("risk_level") == "high":
         minutes = min(minutes, 30)
 
-    # Git velocity adjustment
-    velocity = git.get_velocity(path)
+    # Git velocity adjustment — handles offline git / not a repo gracefully
+    try:
+        velocity = git.get_velocity(path)
+    except Exception:
+        velocity = {"is_repo": False}
     if velocity.get("is_repo"):
         commits_day = velocity.get("commits_day", 0)
         trend = velocity.get("velocity_trend", "stable")
@@ -126,14 +135,23 @@ def calculate_next_wakeup(name: str) -> dict:
         "claude_status": claude_status,
     }
 
-    # Write next_wakeup.json
-    _write_next_wakeup(path, result)
+    # Write next_wakeup.json — disk may be full or permissions wrong
+    try:
+        _write_next_wakeup(path, result)
+    except OSError:
+        pass
 
     # Update project in DB
-    db.update_project(name, next_wakeup=timestamp)
+    try:
+        db.update_project(name, next_wakeup=timestamp)
+    except Exception:
+        pass
 
     # Record this wake decision
-    db.add_wake_record(pid, reason=reason, next_wakeup=timestamp)
+    try:
+        db.add_wake_record(pid, reason=reason, next_wakeup=timestamp)
+    except Exception:
+        pass
 
     return result
 

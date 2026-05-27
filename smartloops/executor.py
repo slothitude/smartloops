@@ -17,12 +17,15 @@ def pick_next_task(project_path: str) -> str | None:
     if not os.path.isfile(todo_path):
         return None
 
-    with open(todo_path, "r", encoding="utf-8") as f:
-        for line in f:
-            stripped = line.strip()
-            if stripped.startswith("- [ ]"):
-                # Strip the checkbox prefix and return the task text
-                return stripped[5:].strip()
+    try:
+        with open(todo_path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped.startswith("- [ ]"):
+                    # Strip the checkbox prefix and return the task text
+                    return stripped[5:].strip()
+    except OSError:
+        pass
     return None
 
 

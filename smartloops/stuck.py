@@ -22,7 +22,10 @@ def detect_stuck(name: str) -> dict:
     signals = []
 
     # 1. Check Claude log for blocked/stuck/failed status
-    log_entries = claude_log.parse_entries(path)
+    try:
+        log_entries = claude_log.parse_entries(path)
+    except Exception:
+        log_entries = []
     latest = log_entries[-1] if log_entries else None
 
     if latest:
@@ -35,11 +38,15 @@ def detect_stuck(name: str) -> dict:
             })
 
     # 2. Low confidence
-    if latest and latest.get("confidence", 100) < STUCK_LOW_CONFIDENCE:
+    try:
+        conf = int(latest.get("confidence", 100)) if latest else 100
+    except (ValueError, TypeError):
+        conf = 50
+    if latest and conf < STUCK_LOW_CONFIDENCE:
         signals.append({
             "type": "confidence",
-            "detail": f"Confidence at {latest['confidence']}% (threshold: {STUCK_LOW_CONFIDENCE}%)",
-            "severity": "medium" if latest["confidence"] > 25 else "high",
+            "detail": f"Confidence at {conf}% (threshold: {STUCK_LOW_CONFIDENCE}%)",
+            "severity": "medium" if conf > 25 else "high",
         })
 
     # 3. Repeated identical log entries

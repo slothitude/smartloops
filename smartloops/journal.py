@@ -14,7 +14,10 @@ def append_entry(project_path: str, observed: str, action: str,
                  next_wake: str, reason: str):
     """Append a new journal entry."""
     path = _journal_path(project_path)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    except OSError:
+        return
 
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
     entry = (
@@ -25,13 +28,16 @@ def append_entry(project_path: str, observed: str, action: str,
         f"Reason:\n{reason}\n"
     )
 
-    # Create file with header if it doesn't exist
-    if not os.path.isfile(path):
-        with open(path, "w", encoding="utf-8") as f:
-            f.write("# Ralph Journal\n")
+    try:
+        # Create file with header if it doesn't exist
+        if not os.path.isfile(path):
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("# Ralph Journal\n")
 
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(entry)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(entry)
+    except OSError:
+        pass
 
 
 def read_entries(project_path: str, limit: int = 20) -> list[dict]:
@@ -46,8 +52,15 @@ def read_entries(project_path: str, limit: int = 20) -> list[dict]:
     except OSError:
         return []
 
+    if not content.strip():
+        return []
+
     entries = []
-    raw = content.split("## ")
+    try:
+        raw = content.split("## ")
+    except Exception:
+        return []
+
     for chunk in raw[1:]:  # skip preamble
         lines = chunk.strip().splitlines()
         if not lines:
@@ -75,7 +88,10 @@ def read_entries(project_path: str, limit: int = 20) -> list[dict]:
 def read_entries_since(project_path: str, since: str) -> list[dict]:
     """Get entries since a given ISO timestamp."""
     entries = read_entries(project_path)
-    since_dt = datetime.fromisoformat(since)
+    try:
+        since_dt = datetime.fromisoformat(since)
+    except (ValueError, TypeError):
+        return entries
     result = []
     for e in entries:
         try:

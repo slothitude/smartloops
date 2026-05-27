@@ -210,7 +210,13 @@ def _assess_risk(confidence: int, claude_status: str, git_data: list, log_entrie
 
     # Repeated low confidence entries
     if len(log_entries) >= 3:
-        recent_confidences = [e.get("confidence", 50) for e in log_entries[-3:]]
+        recent_confidences = []
+        for e in log_entries[-3:]:
+            c = e.get("confidence", 50)
+            try:
+                recent_confidences.append(int(c))
+            except (ValueError, TypeError):
+                recent_confidences.append(50)
         if all(c < 40 for c in recent_confidences):
             score += 3
 
@@ -240,9 +246,12 @@ def _get_next_task(project_path: str) -> str | None:
     todo_path = os.path.join(project_path, "todo.md")
     if not os.path.isfile(todo_path):
         return None
-    with open(todo_path, "r", encoding="utf-8") as f:
-        for line in f:
-            stripped = line.strip()
-            if stripped.startswith("- [ ]"):
-                return stripped[5:].strip()
+    try:
+        with open(todo_path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped.startswith("- [ ]"):
+                    return stripped[5:].strip()
+    except OSError:
+        pass
     return None

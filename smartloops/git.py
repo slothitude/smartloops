@@ -14,7 +14,7 @@ def _git(project_path: str, args: str) -> str:
         result = subprocess.run(
             ["git", "-C", project_path] + args.split(),
             capture_output=True, text=True, timeout=10,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, encoding="utf-8", errors="replace",
         )
         return result.stdout.strip()
     except (subprocess.TimeoutExpired, OSError):
@@ -37,11 +37,16 @@ def get_velocity(project_path: str) -> dict:
         "is_repo": False,
     }
 
-    # Check if it's a git repo
+    # Check if it's a git repo — also handles offline git (timeout/error → empty string)
     check = _git(project_path, "rev-parse --is-inside-work-tree")
     if check.strip() != "true":
         return result
     result["is_repo"] = True
+
+    # Empty repo (no commits yet)
+    has_commits = _git(project_path, "rev-parse HEAD")
+    if not has_commits:
+        return result
 
     now = datetime.now(timezone.utc)
     day_ago = (now - timedelta(hours=24)).isoformat()
@@ -70,10 +75,18 @@ def get_velocity(project_path: str) -> dict:
         else:
             result["velocity_trend"] = "stable"
 
-    # Files changed in last 10 commits
-    output = _git(project_path, "diff --name-only HEAD~10 HEAD")
-    if output:
-        result["files_changed"] = [l.strip() for l in output.splitlines() if l.strip()][:20]
+    # Files changed in last 10 commits (use HEAD~N safely)
+    # First get the actual commit count to avoid HEAD~10 on small repos
+    count_output = _git(project_path, "rev-list --count HEAD")
+    try:
+        commit_count = int(count_output) if count_output else 0
+    except ValueError:
+        commit_count = 0
+    depth = min(commit_count, 10)
+    if depth > 1:
+        output = _git(project_path, f"diff --name-only HEAD~{depth} HEAD")
+        if output:
+            result["files_changed"] = [l.strip() for l in output.splitlines() if l.strip()][:20]
 
     # Age of last commit
     output = _git(project_path, "log -1 --format=%aI")

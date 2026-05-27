@@ -19,7 +19,7 @@ def _get_repo_slug(project_path: str) -> str | None:
         result = subprocess.run(
             ["git", "-C", project_path, "remote", "get-url", "origin"],
             capture_output=True, text=True, timeout=10,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, encoding="utf-8", errors="replace",
         )
         url = result.stdout.strip()
     except (subprocess.TimeoutExpired, OSError):
@@ -54,7 +54,7 @@ def _api_get(path: str) -> dict | list | None:
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read().decode())
-    except (urllib.error.URLError, OSError, json.JSONDecodeError):
+    except (urllib.error.URLError, OSError, json.JSONDecodeError, TimeoutError, ConnectionError):
         return None
 
 
@@ -68,6 +68,7 @@ def _gh_cli(args: list[str]) -> str | None:
             ["gh"] + args,
             capture_output=True, text=True, timeout=15,
             stdin=subprocess.DEVNULL, env=env,
+            encoding="utf-8", errors="replace",
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -186,14 +187,28 @@ def get_github_summary(project_path: str) -> dict:
     """Get a combined GitHub summary for audit integration.
 
     Returns dict with: open_issues, open_prs, milestones, has_github.
+    Safely handles no github repo, offline network, and API failures.
     """
     slug = _get_repo_slug(project_path)
     if not slug:
         return {"has_github": False}
 
-    issues = get_open_issues(project_path)
-    prs = get_open_prs(project_path)
-    milestones = get_milestones(project_path)
+    # All three calls can fail independently — don't let one kill the summary
+    issues = []
+    prs = []
+    milestones = []
+    try:
+        issues = get_open_issues(project_path)
+    except Exception:
+        pass
+    try:
+        prs = get_open_prs(project_path)
+    except Exception:
+        pass
+    try:
+        milestones = get_milestones(project_path)
+    except Exception:
+        pass
 
     return {
         "has_github": True,

@@ -94,7 +94,7 @@
 ## Phase 5 — Polish & Testing
 
 - [x] End-to-end test with a real project
-- [ ] Edge cases: corrupt log files, missing `.smartloops/` dir, offline git, no github repo
+- [x] Edge cases: corrupt log files, missing `.smartloops/` dir, offline git, no github repo
 - [ ] Performance: ensure audits complete in < 5 seconds
 - [x] Config file for Telegram token, GitHub token, notification preferences
 - [x] MCP config snippet for `.claude/.mcp.json`

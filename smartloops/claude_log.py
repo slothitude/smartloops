@@ -30,13 +30,20 @@ def parse_entries(project_path: str) -> list[dict]:
     except OSError:
         return []
 
+    # Empty or whitespace-only file
+    if not content.strip():
+        return []
+
     return _parse_content(content)
 
 
 def _parse_content(content: str) -> list[dict]:
     entries = []
-    # Split on ## YYYY-MM-DD HH:MM headers
-    raw_entries = re.split(r"^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2})", content, flags=re.MULTILINE)
+    try:
+        # Split on ## YYYY-MM-DD HH:MM headers
+        raw_entries = re.split(r"^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2})", content, flags=re.MULTILINE)
+    except (re.error, TypeError):
+        return []
 
     # raw_entries: [preamble, timestamp1, body1, timestamp2, body2, ...]
     for i in range(1, len(raw_entries), 2):
@@ -106,14 +113,23 @@ def _extract_confidence(body: str) -> int:
 
 def get_latest_entry(project_path: str) -> dict | None:
     """Get the most recent log entry."""
-    entries = parse_entries(project_path)
+    try:
+        entries = parse_entries(project_path)
+    except Exception:
+        return None
     return entries[-1] if entries else None
 
 
 def get_entries_since(project_path: str, since: str) -> list[dict]:
     """Get entries since a given ISO timestamp string."""
-    entries = parse_entries(project_path)
-    since_dt = datetime.fromisoformat(since)
+    try:
+        entries = parse_entries(project_path)
+    except Exception:
+        return []
+    try:
+        since_dt = datetime.fromisoformat(since)
+    except (ValueError, TypeError):
+        return entries
     result = []
     for e in entries:
         try:
