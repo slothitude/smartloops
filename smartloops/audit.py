@@ -2,6 +2,7 @@
 
 import os
 import json
+import subprocess
 from datetime import datetime
 
 from config import SMARTLOOPS_DIR, WORLD_MODEL_FILE
@@ -24,6 +25,7 @@ def audit_project(name: str) -> dict:
 
     # Gather state from all sources
     todo_data = _read_todo(path)
+    next_task = _get_next_task(path)
     claude_md = _read_claude_md(path)
     git_data = _read_git_log(path)
     git_velocity = git.get_velocity(path)
@@ -80,6 +82,7 @@ def audit_project(name: str) -> dict:
         "git_commits_recent": len(git_data),
         "last_commit": git_data[0] if git_data else None,
         "git_velocity": git_velocity,
+        "next_task": next_task,
     }
     _write_world_model(path, world_model)
 
@@ -97,6 +100,7 @@ def audit_project(name: str) -> dict:
         "confidence": confidence,
         "risk_level": risk_level,
         "world_model": world_model,
+        "next_task": next_task,
     }
 
 
@@ -133,11 +137,14 @@ def _read_claude_md(project_path: str) -> str:
 def _read_git_log(project_path: str) -> list[str]:
     """Get last 10 git commit subjects."""
     try:
-        stream = os.popen(f"git -C \"{project_path}\" log --oneline -10")
-        output = stream.read()
-        if stream.close() is None or output.strip():
-            return [line.strip() for line in output.strip().splitlines() if line.strip()]
-    except OSError:
+        result = subprocess.run(
+            ["git", "-C", project_path, "log", "--oneline", "-10"],
+            capture_output=True, text=True, timeout=10,
+            stdin=subprocess.DEVNULL,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
+    except (subprocess.TimeoutExpired, OSError):
         pass
     return []
 
@@ -186,3 +193,16 @@ def _write_world_model(project_path: str, model: dict):
     path = os.path.join(sl_dir, WORLD_MODEL_FILE)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(model, f, indent=2, ensure_ascii=False)
+
+
+def _get_next_task(project_path: str) -> str | None:
+    """Return the first unchecked todo item, or None."""
+    todo_path = os.path.join(project_path, "todo.md")
+    if not os.path.isfile(todo_path):
+        return None
+    with open(todo_path, "r", encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if stripped.startswith("- [ ]"):
+                return stripped[5:].strip()
+    return None

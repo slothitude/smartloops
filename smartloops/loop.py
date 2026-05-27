@@ -12,6 +12,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from smartloops import db, audit, wakeup, stuck, drift, journal, notify
+from smartloops import executor
 
 
 def run_cycle() -> list[dict]:
@@ -74,6 +75,8 @@ def _check_project(name: str) -> dict:
 
     action = "Scheduled next wake-up"
     notified = False
+    spawn_result = None
+
     if stuck_result.get("stuck") and stuck_result.get("severity") in ("high", "critical"):
         action = "Stuck detected — notifying human"
         notify.send_message(name, f"STUCK ({stuck_result['severity']})\n" + "\n".join(s["detail"] for s in stuck_result["signals"]))
@@ -82,6 +85,15 @@ def _check_project(name: str) -> dict:
         action = "Drift detected — review recommended"
         notify.send_message(name, f"DRIFT DETECTED\n{drift_result.get('suggestion', '')}")
         notified = True
+    else:
+        # 4. Execution — spawn Claude if there's work to do
+        next_task = audit_result.get("next_task")
+        has_todos = audit_result.get("world_model", {}).get("todo", {}).get("remaining", 0) > 0
+        already_running = executor.is_claude_running(path)
+
+        if has_todos and next_task and not already_running and stuck_result.get("severity") not in ("high", "critical"):
+            spawn_result = executor.spawn_claude(path, next_task)
+            action = f"Spawned Claude (PID {spawn_result['pid']}) to work on: {next_task}"
 
     # Write Ralph journal entry
     next_wake = wake_result.get("timestamp", "unknown") if "error" not in wake_result else "unknown"
@@ -109,6 +121,7 @@ def _check_project(name: str) -> dict:
         "stuck": stuck_result,
         "drift": drift_result,
         "wake": wake_result,
+        "spawn": spawn_result,
     }
 
 

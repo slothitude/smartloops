@@ -143,6 +143,8 @@ def audit_project(name: str) -> str:
         "",
         result["assessment"],
     ]
+    if result.get("next_task"):
+        lines.append(f"\nNext task: {result['next_task']}")
     return "\n".join(lines)
 
 
@@ -356,12 +358,15 @@ def run_cycle() -> str:
         stuck_info = r.get("stuck", {})
         drift_info = r.get("drift", {})
         wake_info = r.get("wake", {})
+        spawn_info = r.get("spawn")
 
         status_parts = []
         if stuck_info.get("stuck"):
             status_parts.append(f"STUCK({stuck_info['severity']})")
         if drift_info.get("drifted"):
             status_parts.append("DRIFTED")
+        if spawn_info:
+            status_parts.append(f"SPAWNED(PID {spawn_info['pid']})")
         if not status_parts:
             status_parts.append("OK")
 
@@ -370,6 +375,8 @@ def run_cycle() -> str:
             f"    Next wake: {wake_info.get('timestamp', 'unknown')}\n"
             f"    Reason: {wake_info.get('reason', 'ok')}"
         )
+        if spawn_info:
+            lines.append(f"    Task: {spawn_info['task']}")
 
     return f"Woke {len(results)} project(s):\n" + "\n".join(lines)
 

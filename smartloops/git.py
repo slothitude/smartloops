@@ -1,21 +1,23 @@
 """Smart Loops — Git velocity metrics.
 
 Enriches audits with commit frequency, velocity trends, and file change data.
-Uses os.popen instead of subprocess to avoid stdin pipe deadlocks with MCP stdio transport.
+Uses subprocess.run with explicit pipe redirection to avoid MCP stdio deadlocks.
 """
 
-import os
+import subprocess
 from datetime import datetime, timedelta
 
 
 def _git(project_path: str, args: str) -> str:
-    """Run a git command and return stdout. Uses os.popen to avoid MCP stdio deadlocks."""
+    """Run a git command and return stdout. Uses subprocess to isolate from MCP transport."""
     try:
-        stream = os.popen(f"git -C \"{project_path}\" {args}")
-        output = stream.read()
-        stream.close()
-        return output.strip()
-    except OSError:
+        result = subprocess.run(
+            ["git", "-C", project_path] + args.split(),
+            capture_output=True, text=True, timeout=10,
+            stdin=subprocess.DEVNULL,
+        )
+        return result.stdout.strip()
+    except (subprocess.TimeoutExpired, OSError):
         return ""
 
 

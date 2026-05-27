@@ -66,10 +66,16 @@ def calculate_next_wakeup(name: str) -> dict:
             minutes = WAKE_HIGH_CONFIDENCE  # 6 hours
             reason = "Autonomous work, high confidence"
 
-    # No log entries → probably inactive
+    # No log entries → check if there are pending todos
     elif not log_entries:
-        minutes = WAKE_INACTIVE  # 24 hours
-        reason = "No Claude activity, checking tomorrow"
+        from smartloops.audit import _get_next_task
+        next_task = _get_next_task(path)
+        if next_task:
+            minutes = WAKE_SIMPLE  # 10 min — todos waiting, need to spawn
+            reason = f"No activity but todos pending: {next_task[:60]}"
+        else:
+            minutes = WAKE_INACTIVE  # 24 hours
+            reason = "No Claude activity, checking tomorrow"
 
     # Repeated wake-ups with same result → extend interval
     if len(wake_history) >= 3:

@@ -1,5 +1,7 @@
 # Smart Loops
 
+stay out of the other folder and projects
+
 Intelligent wake-up scheduler for Claude Code. Watches registered projects, detects stuck/drift, and calculates when to check next.
 
 ## Architecture
@@ -18,6 +20,7 @@ smartloops/
   loop.py             — Wake-up loop (run_cycle)
   notify.py           — Telegram notifications
   git.py              — Git velocity metrics
+  executor.py          — Spawns Claude Code sessions to work on tasks
 ```
 
 ## Running

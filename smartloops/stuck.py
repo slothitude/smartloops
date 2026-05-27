@@ -67,10 +67,13 @@ def detect_stuck(name: str) -> dict:
 
     # 5. No git commits recently
     try:
-        import os
-        stream = os.popen(f"git -C \"{path}\" log -1 --format=%aI")
-        output = stream.read().strip()
-        stream.close()
+        import subprocess
+        result = subprocess.run(
+            ["git", "-C", path, "log", "-1", "--format=%aI"],
+            capture_output=True, text=True, timeout=10,
+            stdin=subprocess.DEVNULL,
+        )
+        output = result.stdout.strip()
         if output:
             last_commit_time = datetime.fromisoformat(output.replace("Z", "+00:00"))
             hours_since = (datetime.now(last_commit_time.tzinfo) - last_commit_time).total_seconds() / 3600
