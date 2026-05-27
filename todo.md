@@ -71,7 +71,7 @@
   - [x] List open PRs
   - [x] Wire into audit scoring
 - [x] `generate_status_report(name)` — comprehensive status report
-  - [ ] Project overview, progress summary, risk assessment, timeline estimate
+  - [x] Project overview, progress summary, risk assessment, timeline estimate
   - [ ] Include git/github data
 - [ ] Wire git + github data into audit and wake-up scoring
 
