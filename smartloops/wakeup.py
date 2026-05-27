@@ -12,7 +12,7 @@ from config import (
     WAKE_SIMPLE, WAKE_LARGE_FEATURE, WAKE_BLOCKED,
     WAKE_HIGH_CONFIDENCE, WAKE_INACTIVE,
 )
-from smartloops import db, claude_log
+from smartloops import db, claude_log, git
 
 
 def calculate_next_wakeup(name: str) -> dict:
@@ -91,6 +91,24 @@ def calculate_next_wakeup(name: str) -> dict:
         reason = "Critical risk override"
     elif latest_audit and latest_audit.get("risk_level") == "high":
         minutes = min(minutes, 30)
+
+    # Git velocity adjustment
+    velocity = git.get_velocity(path)
+    if velocity.get("is_repo"):
+        commits_day = velocity.get("commits_day", 0)
+        trend = velocity.get("velocity_trend", "stable")
+        last_commit_age = velocity.get("last_commit_age_hours")
+
+        # High activity + rising trend → project is humming, check less often
+        if commits_day >= 3 and trend == "rising":
+            minutes = max(minutes, WAKE_HIGH_CONFIDENCE)
+            reason = f"Active project ({commits_day}/day, rising) — {reason}"
+        # Stale commits + pending todos → wake soon, work needs attention
+        elif last_commit_age is not None and last_commit_age > 24:
+            from smartloops.audit import _get_next_task
+            if _get_next_task(path):
+                minutes = min(minutes, WAKE_SIMPLE)
+                reason = f"Stale commit ({last_commit_age:.0f}h ago) + pending todos"
 
     # Calculate timestamp
     next_time = datetime.utcnow() + timedelta(minutes=minutes)

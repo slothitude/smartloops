@@ -6,7 +6,7 @@ import subprocess
 from datetime import datetime
 
 from config import SMARTLOOPS_DIR, WORLD_MODEL_FILE
-from smartloops import db, claude_log, journal, git
+from smartloops import db, claude_log, journal, git, github
 
 
 def audit_project(name: str) -> dict:
@@ -29,6 +29,7 @@ def audit_project(name: str) -> dict:
     claude_md = _read_claude_md(path)
     git_data = _read_git_log(path)
     git_velocity = git.get_velocity(path)
+    github_data = github.get_github_summary(path)
     log_entries = claude_log.parse_entries(path)
     ralph_entries = journal.read_entries(path, limit=5)
 
@@ -46,7 +47,7 @@ def audit_project(name: str) -> dict:
     claude_status = latest_log.get("status", "unknown") if latest_log else "no_log"
 
     # Risk assessment
-    risk_level = _assess_risk(confidence, claude_status, git_data, log_entries)
+    risk_level = _assess_risk(confidence, claude_status, git_data, log_entries, github_data)
 
     # Build assessment text
     assessment_lines = [
@@ -59,6 +60,8 @@ def audit_project(name: str) -> dict:
     ]
     if git_velocity["is_repo"]:
         assessment_lines.append(f"Git velocity: {git_velocity['commits_day']}/day, {git_velocity['commits_week']}/week ({git_velocity['velocity_trend']})")
+    if github_data.get("has_github"):
+        assessment_lines.append(f"GitHub: {github_data['open_issues_count']} issues, {github_data['open_prs_count']} PRs open")
     if latest_log:
         assessment_lines.append(f"Current task: {latest_log.get('task', 'unknown')}")
         if latest_log.get("issue"):
@@ -82,6 +85,7 @@ def audit_project(name: str) -> dict:
         "git_commits_recent": len(git_data),
         "last_commit": git_data[0] if git_data else None,
         "git_velocity": git_velocity,
+        "github": github_data,
         "next_task": next_task,
     }
     _write_world_model(path, world_model)
@@ -149,7 +153,7 @@ def _read_git_log(project_path: str) -> list[str]:
     return []
 
 
-def _assess_risk(confidence: int, claude_status: str, git_data: list, log_entries: list) -> str:
+def _assess_risk(confidence: int, claude_status: str, git_data: list, log_entries: list, github_data: dict = None) -> str:
     """Assess project risk level: low, medium, high, critical."""
     score = 0
 
@@ -170,6 +174,13 @@ def _assess_risk(confidence: int, claude_status: str, git_data: list, log_entrie
     # No recent commits
     if not git_data:
         score += 2
+
+    # Many open issues = potential backlog risk
+    if github_data and github_data.get("has_github"):
+        if github_data["open_issues_count"] > 20:
+            score += 2
+        elif github_data["open_issues_count"] > 10:
+            score += 1
 
     # Repeated low confidence entries
     if len(log_entries) >= 3:

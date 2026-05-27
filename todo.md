@@ -73,7 +73,7 @@
 - [x] `generate_status_report(name)` — comprehensive status report
   - [x] Project overview, progress summary, risk assessment, timeline estimate
   - [ ] Include git/github data
-- [ ] Wire git + github data into audit and wake-up scoring
+- [x] Wire git + github data into audit and wake-up scoring
 
 ## Phase 4 — Notifications & Recovery
 

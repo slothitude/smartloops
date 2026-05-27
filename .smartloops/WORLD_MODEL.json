@@ -1,19 +1,53 @@
 {
-  "timestamp": "2026-05-27T03:22:43.403657",
-  "project": "test-project",
+  "timestamp": "2026-05-27T14:10:37.187775",
+  "project": "smartloops",
   "path": "C:\\Users\\aaron\\smartloops",
-  "goal": "Test the system",
+  "goal": "Intelligent wake-up scheduler for Claude Code",
   "status": "active",
   "todo": {
-    "completed": 0,
-    "total": 87,
-    "remaining": 87
+    "completed": 82,
+    "total": 95,
+    "remaining": 13
   },
   "claude_status": "no_log",
   "confidence": 50,
-  "risk_level": "medium",
+  "risk_level": "low",
   "latest_task": null,
   "latest_issue": null,
-  "git_commits_recent": 0,
-  "last_commit": null
+  "git_commits_recent": 10,
+  "last_commit": "f9d749e Fix negative commit age bug, update todo (82/95 done)",
+  "git_velocity": {
+    "commits_day": 11,
+    "commits_week": 11,
+    "velocity_trend": "stable",
+    "files_changed": [
+      ".gitignore",
+      "CLAUDE.md",
+      "config.py",
+      "run_cycle.bat",
+      "smartloops/__main__.py",
+      "smartloops/audit.py",
+      "smartloops/db.py",
+      "smartloops/executor.py",
+      "smartloops/git.py",
+      "smartloops/loop.py",
+      "smartloops/notify.py",
+      "smartloops/stuck.py",
+      "smartloops/wakeup.py",
+      "smartloops_mcp.py",
+      "todo.md"
+    ],
+    "last_commit_age_hours": 0.1,
+    "is_repo": true
+  },
+  "github": {
+    "has_github": true,
+    "repo": "slothitude/smartloops",
+    "open_issues": [],
+    "open_issues_count": 0,
+    "open_prs": [],
+    "open_prs_count": 0,
+    "milestones": []
+  },
+  "next_task": "Project overview, progress summary, risk assessment, timeline estimate"
 }

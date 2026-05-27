@@ -24,6 +24,9 @@ WAKE_BLOCKED = 15
 WAKE_HIGH_CONFIDENCE = 360
 WAKE_INACTIVE = 1440  # 24 hours
 
+# GitHub API (read-only, optional)
+GITHUB_TOKEN = os.environ.get("SMARTLOOPS_GITHUB_TOKEN", "")
+
 # Stuck detection thresholds
 STUCK_NO_COMMIT_HOURS = 4
 STUCK_LOW_CONFIDENCE = 40

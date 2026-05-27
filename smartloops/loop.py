@@ -125,6 +125,128 @@ def _check_project(name: str) -> dict:
     }
 
 
+def generate_status_report(name: str) -> str:
+    """Generate a comprehensive text status report for a project.
+
+    Runs audit, stuck detection, drift detection, and calculates next wakeup,
+    then composes everything into a human-readable report.
+    """
+    project = db.get_project(name)
+    if not project:
+        return f"Project '{name}' not found."
+
+    # 1. Audit
+    audit_result = audit.audit_project(name)
+    if "error" in audit_result:
+        return f"Error: {audit_result['error']}"
+
+    # 2. Stuck detection
+    stuck_result = stuck.detect_stuck(name)
+    if "error" in stuck_result:
+        stuck_result = {"stuck": False, "signals": [], "severity": "none"}
+
+    # 3. Drift detection
+    drift_result = drift.detect_drift(name)
+    if "error" in drift_result:
+        drift_result = {"drifted": False, "suggestion": ""}
+
+    # 4. Next wake-up
+    wake_result = wakeup.calculate_next_wakeup(name)
+    if "error" in wake_result:
+        wake_result = {"minutes": 0, "timestamp": "unknown", "reason": "error"}
+
+    # Build the report
+    wm = audit_result.get("world_model", {})
+    todo = wm.get("todo", {})
+    git_vel = wm.get("git_velocity", {})
+
+    lines = [
+        f"=== Status Report: {name} ===",
+        "",
+        "--- Overview ---",
+        f"Status:    {project['status']}",
+        f"Goal:      {project['goal']}",
+        f"Path:      {project['path']}",
+        "",
+        "--- Todo Progress ---",
+        f"Completed: {todo.get('completed', 0)}/{todo.get('total', 0)} ({todo.get('remaining', 0)} remaining)",
+    ]
+
+    next_task = audit_result.get("next_task")
+    if next_task:
+        lines.append(f"Next task:  {next_task}")
+
+    lines += [
+        "",
+        "--- Assessment ---",
+        f"Confidence: {audit_result['confidence']}%",
+        f"Risk level: {audit_result['risk_level'].upper()}",
+        f"Claude status: {wm.get('claude_status', 'unknown')}",
+    ]
+
+    latest_task = wm.get("latest_task")
+    if latest_task:
+        lines.append(f"Current task: {latest_task}")
+    latest_issue = wm.get("latest_issue")
+    if latest_issue:
+        lines.append(f"Current issue: {latest_issue}")
+
+    lines += [
+        "",
+        "--- Git Velocity ---",
+    ]
+    if git_vel.get("is_repo"):
+        lines.append(f"Commits:  {git_vel.get('commits_day', 0)}/day, {git_vel.get('commits_week', 0)}/week")
+        lines.append(f"Trend:    {git_vel.get('velocity_trend', 'stable')}")
+        age = git_vel.get("last_commit_age_hours")
+        if age is not None:
+            if age < 1:
+                age_str = f"{age * 60:.0f} minutes ago"
+            else:
+                age_str = f"{age:.1f} hours ago"
+            lines.append(f"Last commit: {age_str}")
+    else:
+        lines.append("Not a git repository")
+
+    lines += [
+        "",
+        "--- Stuck Detection ---",
+    ]
+    if stuck_result.get("stuck"):
+        lines.append(f"STUCK ({stuck_result['severity'].upper()}) -- {stuck_result.get('signal_count', 0)} signal(s)")
+        for s in stuck_result.get("signals", []):
+            lines.append(f"  [{s['severity'].upper()}] {s['type']}: {s['detail']}")
+    else:
+        lines.append("No stuck signals detected.")
+
+    lines += [
+        "",
+        "--- Drift Detection ---",
+    ]
+    if drift_result.get("drifted"):
+        lines.append(f"DRIFTED -- goal overlap: {drift_result.get('overlap_ratio', 0):.0%}")
+        lines.append(f"Goal:           {drift_result.get('goal', '')}")
+        lines.append(f"Current focus:  {drift_result.get('current_focus', '')}")
+        if drift_result.get("suggestion"):
+            lines.append(f"Suggestion:     {drift_result['suggestion']}")
+    else:
+        reason = drift_result.get("reason", "")
+        if reason:
+            lines.append(f"On track. {reason}")
+        else:
+            lines.append(f"On track. Goal overlap: {drift_result.get('overlap_ratio', 0):.0%}")
+
+    lines += [
+        "",
+        "--- Next Wake-up ---",
+        f"Wake in:   {wake_result.get('minutes', 0)} minutes",
+        f"Wake at:   {wake_result.get('timestamp', 'unknown')}",
+        f"Reason:    {wake_result.get('reason', 'scheduled')}",
+    ]
+
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     results = run_cycle()
     if results:

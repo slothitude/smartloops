@@ -342,6 +342,15 @@ def notify_human(name: str, message: str) -> str:
     return f"Failed to notify: {result['detail']}"
 
 
+# --- Status Report ---
+
+@mcp.tool()
+def status_report(name: str) -> str:
+    """Generate a comprehensive status report for a project. Runs audit, stuck detection, drift detection, and next-wakeup calculation, then returns a formatted summary."""
+    from smartloops import loop
+    return loop.generate_status_report(name)
+
+
 # --- Wake-Up Loop ---
 
 @mcp.tool()
