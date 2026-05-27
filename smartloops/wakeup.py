@@ -81,8 +81,11 @@ def calculate_next_wakeup(name: str) -> dict:
     if len(wake_history) >= 3:
         recent_reasons = [w.get("reason", "") for w in wake_history[-3:]]
         if len(set(recent_reasons)) == 1:
-            # Same reason 3 times — double the interval
-            minutes = min(minutes * 2, WAKE_INACTIVE)
+            # Same reason 3 times — extend, but cap if todos still pending
+            from smartloops.audit import _get_next_task
+            has_todos = _get_next_task(path) is not None
+            max_cap = 30 if has_todos else WAKE_INACTIVE
+            minutes = min(minutes * 2, max_cap)
             reason += " (extended: repeated pattern)"
 
     # Risk from audit

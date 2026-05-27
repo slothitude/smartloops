@@ -45,7 +45,23 @@ def spawn_claude(project_path: str, task_prompt: str) -> dict:
     claude_exe = os.path.join(os.path.expanduser("~"), ".local", "bin", "claude.exe")
     if not os.path.isfile(claude_exe):
         claude_exe = "claude"  # fallback to PATH
-    prompt = f"Work on this task from your todo list: {task_prompt}"
+
+    prompt = (
+        f"You are a Smart Loops worker. Complete this task from the todo list:\n\n"
+        f"**{task_prompt}**\n\n"
+        f"When you finish:\n"
+        f"1. Check off the task in todo.md: change `- [ ] {task_prompt}` to `- [x] {task_prompt}`\n"
+        f"2. Append an entry to .smartloops/claude_log.md in this format:\n"
+        f"```\n"
+        f"## [current timestamp]\n"
+        f"Task: {task_prompt}\n"
+        f"Status: completed\n"
+        f"Confidence: 90%\n"
+        f"Next: [next unchecked todo, or 'All done']\n"
+        f"```\n"
+        f"3. Commit your changes with a descriptive message\n\n"
+        f"Read .smartloops/claude_instructions.md if it exists — it may have recovery instructions from the last cycle."
+    )
     cmd = [
         claude_exe,
         "-p", prompt,
