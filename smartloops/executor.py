@@ -42,12 +42,18 @@ def spawn_claude(project_path: str, task_prompt: str) -> dict:
         "--output-format", "json",
     ]
 
+    # Log output to .smartloops/worker.log instead of discarding
+    sl_dir = os.path.join(project_path, SMARTLOOPS_DIR)
+    os.makedirs(sl_dir, exist_ok=True)
+    log_path = os.path.join(sl_dir, "worker.log")
+    log_file = open(log_path, "w", encoding="utf-8")
+
     # Detach from current process tree on Windows
     kwargs = {
         "cwd": project_path,
         "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
+        "stdout": log_file,
+        "stderr": log_file,
     }
 
     if sys.platform == "win32":

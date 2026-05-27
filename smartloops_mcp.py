@@ -381,6 +381,49 @@ def run_cycle() -> str:
     return f"Woke {len(results)} project(s):\n" + "\n".join(lines)
 
 
+# --- Executor ---
+
+@mcp.tool()
+def worker_status(name: str) -> str:
+    """Check on the spawned Claude worker for a project. Shows PID, task, status, and recent output."""
+    from smartloops.executor import is_claude_running, _read_spawn_info
+    project = db.get_project(name)
+    if not project:
+        return f"Project '{name}' not found."
+
+    path = project["path"]
+    info = _read_spawn_info(path)
+    if not info:
+        return "No worker has been spawned for this project."
+
+    running = is_claude_running(path)
+    pid = info.get("pid", "?")
+    task = info.get("task", "?")
+    started = info.get("started", "?")
+    status = "RUNNING" if running else info.get("status", "unknown")
+
+    lines = [
+        f"=== Worker: {name} ===",
+        f"PID: {pid}",
+        f"Status: {status}",
+        f"Task: {task}",
+        f"Started: {started}",
+    ]
+
+    # Read last 50 lines of worker.log
+    import os
+    log_path = os.path.join(path, ".smartloops", "worker.log")
+    if os.path.isfile(log_path):
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            log_lines = f.read().strip().splitlines()
+        if log_lines:
+            tail = log_lines[-50:]
+            lines.append(f"\n--- worker.log (last {len(tail)} lines) ---")
+            lines.extend(tail)
+
+    return "\n".join(lines)
+
+
 # --- Entry Point ---
 
 if __name__ == "__main__":
