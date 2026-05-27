@@ -65,12 +65,12 @@
   - [x] Commit frequency (commits/day, commits/week)
   - [x] Project velocity trend
   - [x] Files changed analysis
-- [ ] `github.py` — GitHub API (read-only)
-  - [ ] List open issues
-  - [ ] List milestones and completion %
-  - [ ] List open PRs
-  - [ ] Wire into audit scoring
-- [ ] `generate_status_report(name)` — comprehensive status report
+- [x] `github.py` — GitHub API (read-only)
+  - [x] List open issues
+  - [x] List milestones and completion %
+  - [x] List open PRs
+  - [x] Wire into audit scoring
+- [x] `generate_status_report(name)` — comprehensive status report
   - [ ] Project overview, progress summary, risk assessment, timeline estimate
   - [ ] Include git/github data
 - [ ] Wire git + github data into audit and wake-up scoring

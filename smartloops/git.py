@@ -5,7 +5,7 @@ Uses subprocess.run with explicit pipe redirection to avoid MCP stdio deadlocks.
 """
 
 import subprocess
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 def _git(project_path: str, args: str) -> str:
@@ -43,7 +43,7 @@ def get_velocity(project_path: str) -> dict:
         return result
     result["is_repo"] = True
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     day_ago = (now - timedelta(hours=24)).isoformat()
     week_ago = (now - timedelta(days=7)).isoformat()
     two_weeks_ago = (now - timedelta(days=14)).isoformat()
@@ -81,7 +81,7 @@ def get_velocity(project_path: str) -> dict:
         try:
             last_commit_time = datetime.fromisoformat(output.replace("Z", "+00:00"))
             result["last_commit_age_hours"] = round(
-                (now.replace(tzinfo=last_commit_time.tzinfo) - last_commit_time).total_seconds() / 3600, 1
+                (now - last_commit_time).total_seconds() / 3600, 1
             )
         except (ValueError, TypeError):
             pass
