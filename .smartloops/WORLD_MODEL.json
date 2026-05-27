@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-05-27T03:22:43.403657",
+  "project": "test-project",
+  "path": "C:\\Users\\aaron\\smartloops",
+  "goal": "Test the system",
+  "status": "active",
+  "todo": {
+    "completed": 0,
+    "total": 87,
+    "remaining": 87
+  },
+  "claude_status": "no_log",
+  "confidence": 50,
+  "risk_level": "medium",
+  "latest_task": null,
+  "latest_issue": null,
+  "git_commits_recent": 0,
+  "last_commit": null
+}

@@ -1,0 +1,258 @@
+"""Smart Loops MCP — Intelligent wake-up scheduler for Claude Code.
+
+Entry point for the MCP server.
+"""
+
+import sys
+import os
+
+# Add project root to path so config is importable
+sys.path.insert(0, os.path.dirname(__file__))
+
+from mcp.server.fastmcp import FastMCP
+from smartloops import db, audit, claude_log, journal, wakeup, stuck, drift
+
+mcp = FastMCP("smartloops")
+
+
+# --- Project Management ---
+
+@mcp.tool()
+def project_register(name: str, path: str, goal: str) -> str:
+    """Register a new project for Smart Loops to watch.
+
+    Creates the .smartloops/ directory in the project root.
+    """
+    existing = db.get_project(name)
+    if existing:
+        return f"Project '{name}' already registered at {existing['path']}"
+
+    # Resolve path
+    path = os.path.abspath(path)
+    if not os.path.isdir(path):
+        return f"Error: path does not exist: {path}"
+
+    # Create .smartloops/ directory
+    sl_dir = os.path.join(path, ".smartloops")
+    os.makedirs(sl_dir, exist_ok=True)
+
+    # Create empty claude_log.md if not present
+    log_path = os.path.join(sl_dir, "claude_log.md")
+    if not os.path.isfile(log_path):
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write("# Claude Work Log\n")
+
+    # Create empty ralph_journal.md
+    journal_path = os.path.join(sl_dir, "ralph_journal.md")
+    if not os.path.isfile(journal_path):
+        with open(journal_path, "w", encoding="utf-8") as f:
+            f.write("# Ralph Journal\n")
+
+    pid = db.add_project(name, path, goal)
+    return f"Registered project '{name}' (id={pid}) at {path}\nGoal: {goal}"
+
+
+@mcp.tool()
+def project_list() -> str:
+    """List all registered projects with their status."""
+    projects = db.list_projects()
+    if not projects:
+        return "No projects registered."
+
+    lines = []
+    for p in projects:
+        status_icon = {"active": "●", "paused": "⏸", "complete": "✓"}.get(p["status"], "?")
+        last = p.get("last_audit") or "never"
+        lines.append(
+            f"{status_icon} {p['name']} — {p['status']}\n"
+            f"  Path: {p['path']}\n"
+            f"  Goal: {p['goal']}\n"
+            f"  Last audit: {last}"
+        )
+    return "\n\n".join(lines)
+
+
+@mcp.tool()
+def project_status(name: str) -> str:
+    """Get detailed status for a project including latest audit."""
+    project = db.get_project(name)
+    if not project:
+        return f"Project '{name}' not found."
+
+    lines = [
+        f"Project: {project['name']}",
+        f"Status: {project['status']}",
+        f"Path: {project['path']}",
+        f"Goal: {project['goal']}",
+        f"Created: {project['created']}",
+        f"Last audit: {project.get('last_audit') or 'never'}",
+    ]
+
+    # Latest audit
+    latest = db.get_latest_audit(project["id"])
+    if latest:
+        lines.append(f"\nLatest Audit ({latest['timestamp']}):")
+        lines.append(f"  Confidence: {latest['confidence']}%")
+        lines.append(f"  Risk: {latest['risk_level']}")
+        lines.append(f"  Assessment: {latest['assessment']}")
+
+    # Recent wake history
+    wakes = db.get_wake_history(project["id"], limit=3)
+    if wakes:
+        lines.append(f"\nRecent Wake-ups:")
+        for w in wakes:
+            lines.append(f"  {w['woke_at']} — {w.get('reason', 'no reason')}")
+
+    return "\n".join(lines)
+
+
+# --- Audit ---
+
+@mcp.tool()
+def audit_project(name: str) -> str:
+    """Run a full project audit. Reads todo, CLAUDE.md, git log, Claude's log."""
+    result = audit.audit_project(name)
+    if "error" in result:
+        return f"Error: {result['error']}"
+
+    lines = [
+        f"=== Audit: {result['project']} ===",
+        f"Confidence: {result['confidence']}%",
+        f"Risk Level: {result['risk_level']}",
+        "",
+        result["assessment"],
+    ]
+    return "\n".join(lines)
+
+
+# --- Claude Log ---
+
+@mcp.tool()
+def read_claude_log(name: str, limit: int = 10) -> str:
+    """Read Claude's work log for a project."""
+    project = db.get_project(name)
+    if not project:
+        return f"Project '{name}' not found."
+
+    entries = claude_log.parse_entries(project["path"])
+    if not entries:
+        return "No Claude log entries found."
+
+    # Return last `limit` entries
+    entries = entries[-limit:]
+    lines = []
+    for e in entries:
+        lines.append(f"## {e['timestamp']}")
+        lines.append(f"  Task: {e['task']}")
+        lines.append(f"  Status: {e['status']}")
+        lines.append(f"  Confidence: {e['confidence']}%")
+        if e.get("next"):
+            lines.append(f"  Next: {e['next']}")
+        if e.get("issue"):
+            lines.append(f"  Issue: {e['issue']}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+# --- Ralph Journal ---
+
+@mcp.tool()
+def read_ralph_journal(name: str, limit: int = 10) -> str:
+    """Read Ralph's observation journal for a project."""
+    project = db.get_project(name)
+    if not project:
+        return f"Project '{name}' not found."
+
+    entries = journal.read_entries(project["path"], limit=limit)
+    if not entries:
+        return "No Ralph journal entries found."
+
+    lines = []
+    for e in entries:
+        lines.append(f"## {e['timestamp']}")
+        lines.append(f"  Observed: {e['observed']}")
+        lines.append(f"  Action: {e['action']}")
+        lines.append(f"  Next Wake: {e['next_wake']}")
+        lines.append(f"  Reason: {e['reason']}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+# --- Phase 2: Smart Wake-Up ---
+
+@mcp.tool()
+def calculate_next_wakeup(name: str) -> str:
+    """Calculate the next intelligent wake-up time for a project.
+
+    Scores based on task complexity, confidence, risk, and progress.
+    Writes next_wakeup.json to the project's .smartloops/ dir.
+    """
+    result = wakeup.calculate_next_wakeup(name)
+    if "error" in result:
+        return f"Error: {result['error']}"
+
+    lines = [
+        f"=== Next Wake-up: {result['project']} ===",
+        f"Wake in: {result['minutes']} minutes",
+        f"Wake at: {result['timestamp']}",
+        f"Reason: {result['reason']}",
+        f"Confidence: {result['confidence']}%",
+        f"Claude status: {result['claude_status']}",
+    ]
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def detect_stuck(name: str) -> str:
+    """Check if a project is stuck. Looks for repeated errors, no commits, low confidence."""
+    result = stuck.detect_stuck(name)
+    if "error" in result:
+        return f"Error: {result['error']}"
+
+    if not result["stuck"]:
+        return f"Project '{name}' is NOT stuck. No warning signals detected."
+
+    lines = [
+        f"=== STUCK DETECTED: {name} ===",
+        f"Severity: {result['severity']}",
+        f"Signals: {result['signal_count']}",
+        "",
+    ]
+    for s in result["signals"]:
+        lines.append(f"  [{s['severity'].upper()}] {s['type']}: {s['detail']}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def detect_drift(name: str) -> str:
+    """Check if a project has drifted from its goal. Compares current work vs registered goal."""
+    result = drift.detect_drift(name)
+    if "error" in result:
+        return f"Error: {result['error']}"
+
+    if not result.get("drifted"):
+        reason = result.get("reason", "")
+        if reason:
+            return f"Project '{name}': {reason}"
+        return (f"Project '{name}' is on track. "
+                f"Goal overlap: {result.get('overlap_ratio', 0):.0%}")
+
+    lines = [
+        f"=== DRIFT DETECTED: {name} ===",
+        f"Goal: {result['goal']}",
+        f"Current focus: {result['current_focus']}",
+        f"Goal overlap: {result['overlap_ratio']:.0%}",
+        f"Matching keywords: {', '.join(result['overlap']) or 'none'}",
+        f"Missing keywords: {', '.join(set(result['goal_keywords']) - set(result['overlap'])) or 'none'}",
+        "",
+        f"Suggestion: {result['suggestion']}",
+    ]
+    return "\n".join(lines)
+
+
+# --- Entry Point ---
+
+if __name__ == "__main__":
+    mcp.run()

@@ -1,0 +1,8 @@
+{
+  "project": "test-project",
+  "minutes": 1440,
+  "timestamp": "2026-05-28T03:22:43.420257",
+  "reason": "No Claude activity, checking tomorrow",
+  "confidence": 50,
+  "claude_status": "no_log"
+}
