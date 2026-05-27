@@ -6,7 +6,7 @@ import subprocess
 from datetime import datetime
 
 from config import SMARTLOOPS_DIR, WORLD_MODEL_FILE
-from smartloops import db, claude_log, journal
+from smartloops import db, claude_log, journal, git
 
 
 def audit_project(name: str) -> dict:
@@ -27,6 +27,7 @@ def audit_project(name: str) -> dict:
     todo_data = _read_todo(path)
     claude_md = _read_claude_md(path)
     git_data = _read_git_log(path)
+    git_velocity = git.get_velocity(path)
     log_entries = claude_log.parse_entries(path)
     ralph_entries = journal.read_entries(path, limit=5)
 
@@ -55,6 +56,8 @@ def audit_project(name: str) -> dict:
         f"Risk: {risk_level}",
         f"Commits (last 10): {len(git_data)}",
     ]
+    if git_velocity["is_repo"]:
+        assessment_lines.append(f"Git velocity: {git_velocity['commits_day']}/day, {git_velocity['commits_week']}/week ({git_velocity['velocity_trend']})")
     if latest_log:
         assessment_lines.append(f"Current task: {latest_log.get('task', 'unknown')}")
         if latest_log.get("issue"):
@@ -77,6 +80,7 @@ def audit_project(name: str) -> dict:
         "latest_issue": latest_log.get("issue") if latest_log else None,
         "git_commits_recent": len(git_data),
         "last_commit": git_data[0] if git_data else None,
+        "git_velocity": git_velocity,
     }
     _write_world_model(path, world_model)
 

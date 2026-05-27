@@ -99,8 +99,12 @@ def list_projects(status: str | None = None) -> list[dict]:
 def update_project(name: str, **kwargs) -> bool:
     if not kwargs:
         return False
-    sets = ", ".join(f"{k} = ?" for k in kwargs)
-    vals = list(kwargs.values()) + [name]
+    allowed = {"status", "goal", "path", "last_audit", "next_wakeup"}
+    filtered = {k: v for k, v in kwargs.items() if k in allowed}
+    if not filtered:
+        return False
+    sets = ", ".join(f"{k} = ?" for k in filtered)
+    vals = list(filtered.values()) + [name]
     conn = _get_conn()
     cur = conn.execute(f"UPDATE projects SET {sets} WHERE name = ?", vals)
     conn.commit()

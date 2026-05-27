@@ -3,7 +3,7 @@
 import os
 
 # Telegram Bot
-TELEGRAM_BOT_TOKEN = os.environ.get("SMARTLOOPS_TELEGRAM_TOKEN", "8832267173:AAEJWNVGXfxMy2uIbUial2bTzutzWn1VMxk")
+TELEGRAM_BOT_TOKEN = os.environ.get("SMARTLOOPS_TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("SMARTLOOPS_TELEGRAM_CHAT_ID", "")
 
 # Database

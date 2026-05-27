@@ -10,7 +10,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from mcp.server.fastmcp import FastMCP
-from smartloops import db, audit, claude_log, journal, wakeup, stuck, drift
+from smartloops import db, audit, claude_log, journal, wakeup, stuck, drift, loop, notify
 
 mcp = FastMCP("smartloops")
 
@@ -250,6 +250,101 @@ def detect_drift(name: str) -> str:
         f"Suggestion: {result['suggestion']}",
     ]
     return "\n".join(lines)
+
+
+# --- Project Lifecycle ---
+
+@mcp.tool()
+def pause_project(name: str) -> str:
+    """Pause a project — stops wake-ups and audits until resumed."""
+    project = db.get_project(name)
+    if not project:
+        return f"Project '{name}' not found."
+    if project["status"] != "active":
+        return f"Project '{name}' is already {project['status']}."
+
+    db.update_project(name, status="paused")
+    return f"Project '{name}' paused. Wake-ups and audits stopped."
+
+
+@mcp.tool()
+def resume_project(name: str) -> str:
+    """Resume a paused project."""
+    project = db.get_project(name)
+    if not project:
+        return f"Project '{name}' not found."
+    if project["status"] != "paused":
+        return f"Project '{name}' is not paused (status: {project['status']})."
+
+    db.update_project(name, status="active")
+    return f"Project '{name}' resumed. Wake-ups will resume on schedule."
+
+
+@mcp.tool()
+def complete_project(name: str) -> str:
+    """Mark a project as complete — stops wake-ups, writes final Ralph journal entry."""
+    project = db.get_project(name)
+    if not project:
+        return f"Project '{name}' not found."
+    if project["status"] == "complete":
+        return f"Project '{name}' is already complete."
+
+    # Write final journal entry
+    from smartloops import journal
+    journal.append_entry(
+        project_path=project["path"],
+        observed=f"Project completed. Goal: {project['goal']}",
+        action="Marked complete — wake-ups stopped",
+        next_wake="Never",
+        reason="Project complete",
+    )
+
+    db.update_project(name, status="complete")
+    return f"Project '{name}' marked complete. Final journal entry written."
+
+
+# --- Notifications ---
+
+@mcp.tool()
+def notify_human(name: str, message: str) -> str:
+    """Send a Telegram notification about a project. Requires SMARTLOOPS_TELEGRAM_TOKEN and SMARTLOOPS_TELEGRAM_CHAT_ID env vars."""
+    result = notify.send_message(name, message)
+    if result["success"]:
+        return f"Notification sent for '{name}'."
+    return f"Failed to notify: {result['detail']}"
+
+
+# --- Wake-Up Loop ---
+
+@mcp.tool()
+def run_cycle() -> str:
+    """Run one wake-up cycle for all active projects. Checks which projects are due and runs audit/stuck/drift on them."""
+    results = loop.run_cycle()
+    if not results:
+        return "No projects due for wake-up."
+
+    lines = []
+    for r in results:
+        name = r["project"]
+        stuck_info = r.get("stuck", {})
+        drift_info = r.get("drift", {})
+        wake_info = r.get("wake", {})
+
+        status_parts = []
+        if stuck_info.get("stuck"):
+            status_parts.append(f"STUCK({stuck_info['severity']})")
+        if drift_info.get("drifted"):
+            status_parts.append("DRIFTED")
+        if not status_parts:
+            status_parts.append("OK")
+
+        lines.append(
+            f"  {name}: {' | '.join(status_parts)}\n"
+            f"    Next wake: {wake_info.get('timestamp', 'unknown')}\n"
+            f"    Reason: {wake_info.get('reason', 'ok')}"
+        )
+
+    return f"Woke {len(results)} project(s):\n" + "\n".join(lines)
 
 
 # --- Entry Point ---
