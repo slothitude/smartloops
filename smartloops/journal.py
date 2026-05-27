@@ -40,8 +40,11 @@ def read_entries(project_path: str, limit: int = 20) -> list[dict]:
     if not os.path.isfile(path):
         return []
 
-    with open(path, "r", encoding="utf-8") as f:
-        content = f.read()
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+    except OSError:
+        return []
 
     entries = []
     raw = content.split("## ")
@@ -53,14 +56,17 @@ def read_entries(project_path: str, limit: int = 20) -> list[dict]:
         timestamp = lines[0].strip()
         body = "\n".join(lines[1:])
 
-        entry = {
-            "timestamp": timestamp,
-            "observed": _extract_section(body, "observed"),
-            "action": _extract_section(body, "action"),
-            "next_wake": _extract_section(body, "next wake"),
-            "reason": _extract_section(body, "reason"),
-        }
-        entries.append(entry)
+        try:
+            entry = {
+                "timestamp": timestamp,
+                "observed": _extract_section(body, "observed"),
+                "action": _extract_section(body, "action"),
+                "next_wake": _extract_section(body, "next wake"),
+                "reason": _extract_section(body, "reason"),
+            }
+            entries.append(entry)
+        except Exception:
+            continue
 
     # Return last `limit` entries
     return entries[-limit:]

@@ -1,8 +1,8 @@
 {
   "project": "smartloops",
-  "minutes": 10,
-  "timestamp": "2026-05-27T14:20:37.227327",
-  "reason": "No activity but todos pending: Project overview, progress summary, risk assessment, timelin",
+  "minutes": 20,
+  "timestamp": "2026-05-27T22:23:08.420678",
+  "reason": "No activity but todos pending: Edge cases: corrupt log files, missing `.smartloops/` dir, o (extended: repeated pattern)",
   "confidence": 50,
   "claude_status": "no_log"
 }

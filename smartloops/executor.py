@@ -29,11 +29,18 @@ def pick_next_task(project_path: str) -> str | None:
 def spawn_claude(project_path: str, task_prompt: str) -> dict:
     """Launch Claude Code in the project directory as a detached background process.
 
-    Only used when running standalone (scheduled task). When called from Claude Code,
-    use subagent_spawn() instead — it returns a task description for the Agent tool.
-
     Returns dict with pid, command, status.
     """
+    # Don't spawn if a worker is already running
+    if is_claude_running(project_path):
+        info = _read_spawn_info(project_path) or {}
+        return {
+            "pid": info.get("pid"),
+            "task": task_prompt,
+            "status": "already_running",
+            "mode": "subprocess",
+        }
+
     # Build the claude command — use full path for scheduled task context
     claude_exe = os.path.join(os.path.expanduser("~"), ".local", "bin", "claude.exe")
     if not os.path.isfile(claude_exe):
@@ -80,28 +87,6 @@ def spawn_claude(project_path: str, task_prompt: str) -> dict:
         "task": task_prompt,
         "status": "spawned",
         "mode": "subprocess",
-    }
-
-
-def subagent_spawn(project_path: str, task_prompt: str) -> dict:
-    """Mark a task as needing a subagent spawn. Returns task info for Claude to use with Agent tool.
-
-    Call this from MCP context — the calling Claude then uses the Agent tool
-    to run the task as a visible subagent in the TUI.
-    """
-    _write_spawn_info(project_path, {
-        "pid": None,
-        "task": task_prompt,
-        "started": _utc_now(),
-        "status": "running",
-        "mode": "subagent",
-    })
-
-    return {
-        "task": task_prompt,
-        "status": "needs_agent",
-        "mode": "subagent",
-        "instruction": f"Spawn a subagent to work on: {task_prompt}",
     }
 
 

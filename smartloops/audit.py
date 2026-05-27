@@ -23,15 +23,35 @@ def audit_project(name: str) -> dict:
     if not os.path.isdir(path):
         return {"error": f"Project path does not exist: {path}"}
 
-    # Gather state from all sources
+    # Ensure .smartloops/ dir exists (may have been deleted externally)
+    sl_dir = os.path.join(path, SMARTLOOPS_DIR)
+    os.makedirs(sl_dir, exist_ok=True)
+
+    # Gather state from all sources — each can fail independently
     todo_data = _read_todo(path)
     next_task = _get_next_task(path)
     claude_md = _read_claude_md(path)
     git_data = _read_git_log(path)
-    git_velocity = git.get_velocity(path)
-    github_data = github.get_github_summary(path)
-    log_entries = claude_log.parse_entries(path)
-    ralph_entries = journal.read_entries(path, limit=5)
+
+    try:
+        git_velocity = git.get_velocity(path)
+    except Exception:
+        git_velocity = {"is_repo": False, "commits_day": 0, "commits_week": 0, "velocity_trend": "stable"}
+
+    try:
+        github_data = github.get_github_summary(path)
+    except Exception:
+        github_data = {"has_github": False}
+
+    try:
+        log_entries = claude_log.parse_entries(path)
+    except Exception:
+        log_entries = []
+
+    try:
+        ralph_entries = journal.read_entries(path, limit=5)
+    except Exception:
+        ralph_entries = []
 
     latest_log = log_entries[-1] if log_entries else None
 
@@ -114,8 +134,11 @@ def _read_todo(project_path: str) -> dict:
     if not os.path.isfile(todo_path):
         return {"total": 0, "completed": 0}
 
-    with open(todo_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    try:
+        with open(todo_path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+    except OSError:
+        return {"total": 0, "completed": 0}
 
     total = 0
     completed = 0
@@ -134,8 +157,11 @@ def _read_claude_md(project_path: str) -> str:
     path = os.path.join(project_path, "CLAUDE.md")
     if not os.path.isfile(path):
         return ""
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read(2000)
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read(2000)
+    except OSError:
+        return ""
 
 
 def _read_git_log(project_path: str) -> list[str]:
@@ -199,11 +225,14 @@ def _assess_risk(confidence: int, claude_status: str, git_data: list, log_entrie
 
 def _write_world_model(project_path: str, model: dict):
     """Write WORLD_MODEL.json to project's .smartloops/ dir."""
-    sl_dir = os.path.join(project_path, SMARTLOOPS_DIR)
-    os.makedirs(sl_dir, exist_ok=True)
-    path = os.path.join(sl_dir, WORLD_MODEL_FILE)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(model, f, indent=2, ensure_ascii=False)
+    try:
+        sl_dir = os.path.join(project_path, SMARTLOOPS_DIR)
+        os.makedirs(sl_dir, exist_ok=True)
+        path = os.path.join(sl_dir, WORLD_MODEL_FILE)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(model, f, indent=2, ensure_ascii=False)
+    except OSError:
+        pass  # Can't write — disk full, permissions, etc. Don't crash the audit.
 
 
 def _get_next_task(project_path: str) -> str | None:

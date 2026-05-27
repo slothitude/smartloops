@@ -375,7 +375,7 @@ def run_cycle() -> str:
         if drift_info.get("drifted"):
             status_parts.append("DRIFTED")
         if spawn_info:
-            status_parts.append(f"SPAWNED(PID {spawn_info['pid']})")
+            status_parts.append(f"SPAWNED(PID {spawn_info.get('pid', '?')})")
         if not status_parts:
             status_parts.append("OK")
 
@@ -385,7 +385,7 @@ def run_cycle() -> str:
             f"    Reason: {wake_info.get('reason', 'ok')}"
         )
         if spawn_info:
-            lines.append(f"    Task: {spawn_info['task']}")
+            lines.append(f"    Task: {spawn_info.get('task', '?')}")
 
     return f"Woke {len(results)} project(s):\n" + "\n".join(lines)
 

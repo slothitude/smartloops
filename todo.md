@@ -93,7 +93,7 @@
 
 ## Phase 5 — Polish & Testing
 
-- [ ] End-to-end test with a real project
+- [x] End-to-end test with a real project
 - [ ] Edge cases: corrupt log files, missing `.smartloops/` dir, offline git, no github repo
 - [ ] Performance: ensure audits complete in < 5 seconds
 - [x] Config file for Telegram token, GitHub token, notification preferences
@@ -111,4 +111,4 @@
 - [x] Loop integration — spawn Claude when todos pending and not stuck(high/critical)
 - [x] Wakeup fix — use 10min interval for projects with pending todos (not 24h)
 - [x] Audit exposes `next_task` in result for executor
-- [x] Auto-wake scheduler task (schtasks SmartLoops-Cycle, every 15 min)
+- [x] Auto-wake scheduler task (schtasks SmartLoops-Cycle, every 10 min)

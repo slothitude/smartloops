@@ -24,8 +24,11 @@ def parse_entries(project_path: str) -> list[dict]:
     if not os.path.isfile(path):
         return []
 
-    with open(path, "r", encoding="utf-8") as f:
-        content = f.read()
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+    except OSError:
+        return []
 
     return _parse_content(content)
 
@@ -40,17 +43,21 @@ def _parse_content(content: str) -> list[dict]:
         timestamp_str = raw_entries[i]
         body = raw_entries[i + 1] if i + 1 < len(raw_entries) else ""
 
-        entry = {
-            "timestamp": timestamp_str,
-            "task": _extract_field(body, "task"),
-            "status": _extract_field(body, "status"),
-            "actions": _extract_list(body, "actions"),
-            "next": _extract_field(body, "next"),
-            "confidence": _extract_confidence(body),
-            "issue": _extract_field(body, "issue"),
-            "attempted": _extract_list(body, "attempted"),
-        }
-        entries.append(entry)
+        try:
+            entry = {
+                "timestamp": timestamp_str,
+                "task": _extract_field(body, "task"),
+                "status": _extract_field(body, "status"),
+                "actions": _extract_list(body, "actions"),
+                "next": _extract_field(body, "next"),
+                "confidence": _extract_confidence(body),
+                "issue": _extract_field(body, "issue"),
+                "attempted": _extract_list(body, "attempted"),
+            }
+            entries.append(entry)
+        except Exception:
+            # Skip malformed entries rather than aborting the whole parse
+            continue
 
     return entries
 
@@ -89,8 +96,11 @@ def _extract_confidence(body: str) -> int:
     """Extract confidence percentage."""
     val = _extract_field(body, "confidence")
     if val:
-        # Handle "85%" or "85"
-        return int(re.sub(r"[^\d]", "", val))
+        try:
+            digits = re.sub(r"[^\d]", "", val)
+            return int(digits) if digits else 50
+        except (ValueError, TypeError):
+            return 50
     return 50
 
 

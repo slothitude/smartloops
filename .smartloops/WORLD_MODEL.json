@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-05-27T14:10:37.187775",
+  "timestamp": "2026-05-27T22:03:07.323299",
   "project": "smartloops",
   "path": "C:\\Users\\aaron\\smartloops",
   "goal": "Intelligent wake-up scheduler for Claude Code",
   "status": "active",
   "todo": {
-    "completed": 82,
+    "completed": 91,
     "total": 95,
-    "remaining": 13
+    "remaining": 4
   },
   "claude_status": "no_log",
   "confidence": 50,
@@ -15,29 +15,34 @@
   "latest_task": null,
   "latest_issue": null,
   "git_commits_recent": 10,
-  "last_commit": "f9d749e Fix negative commit age bug, update todo (82/95 done)",
+  "last_commit": "bd56a89 Add 4-level recovery system with escalation ladder",
   "git_velocity": {
-    "commits_day": 11,
-    "commits_week": 11,
+    "commits_day": 15,
+    "commits_week": 15,
     "velocity_trend": "stable",
     "files_changed": [
-      ".gitignore",
-      "CLAUDE.md",
+      ".claude/scheduled_tasks.lock",
+      ".smartloops/WORLD_MODEL.json",
+      ".smartloops/next_wakeup.json",
+      ".smartloops/ralph_journal.md",
+      "__pycache__/config.cpython-313.pyc",
+      "__pycache__/smartloops_mcp.cpython-313.pyc",
       "config.py",
+      "data/smartloops.db",
       "run_cycle.bat",
-      "smartloops/__main__.py",
+      "smartloops/__pycache__/__init__.cpython-313.pyc",
+      "smartloops/__pycache__/audit.cpython-313.pyc",
+      "smartloops/__pycache__/claude_log.cpython-313.pyc",
+      "smartloops/__pycache__/db.cpython-313.pyc",
+      "smartloops/__pycache__/drift.cpython-313.pyc",
+      "smartloops/__pycache__/journal.cpython-313.pyc",
+      "smartloops/__pycache__/stuck.cpython-313.pyc",
+      "smartloops/__pycache__/wakeup.cpython-313.pyc",
       "smartloops/audit.py",
-      "smartloops/db.py",
       "smartloops/executor.py",
-      "smartloops/git.py",
-      "smartloops/loop.py",
-      "smartloops/notify.py",
-      "smartloops/stuck.py",
-      "smartloops/wakeup.py",
-      "smartloops_mcp.py",
-      "todo.md"
+      "smartloops/git.py"
     ],
-    "last_commit_age_hours": 0.1,
+    "last_commit_age_hours": 7.7,
     "is_repo": true
   },
   "github": {
@@ -49,5 +54,5 @@
     "open_prs_count": 0,
     "milestones": []
   },
-  "next_task": "Project overview, progress summary, risk assessment, timeline estimate"
+  "next_task": "Edge cases: corrupt log files, missing `.smartloops/` dir, offline git, no github repo"
 }
