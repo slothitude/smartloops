@@ -79,6 +79,14 @@ def get_project(name: str) -> dict | None:
     return dict(row) if row else None
 
 
+def get_project_by_path(path: str) -> dict | None:
+    """Look up a project by filesystem path."""
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM projects WHERE path = ?", (path,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def get_project_by_id(pid: int) -> dict | None:
     conn = _get_conn()
     row = conn.execute("SELECT * FROM projects WHERE id = ?", (pid,)).fetchone()

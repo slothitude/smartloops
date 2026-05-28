@@ -202,6 +202,7 @@ _HELP_TEXT = (
     "/resume <name> - Resume a project\n"
     "/cycle - Run one wake-up cycle\n"
     "/worker <name> - Worker status\n"
+    "/plan <name> - Start interactive planning terminal\n"
     "/log <name> [N] - Claude log (last N entries)\n"
     "/questions - List pending questions\n"
     "/start - Show this help\n"
@@ -377,6 +378,20 @@ def _dispatch(cmd: str, args: list[str]) -> str:
             f"Status: {info.get('status', '?')}\n"
             f"Alive: {'yes' if running else 'no'}\n"
             f"Started: {info.get('started', '?')}"
+        )
+
+    if cmd == "/plan":
+        project = db.get_project(name)
+        if not project:
+            return f"Project '{name}' not found."
+        from smartloops.executor import spawn_interactive
+        result = spawn_interactive(project["path"])
+        if "error" in result:
+            return f"Error: {result['error']}"
+        return (
+            f"*Interactive terminal for {name}*\n"
+            f"URL: {result.get('url', '?')}\n"
+            f"PID: {result.get('pid', '?')}"
         )
 
     if cmd == "/log":

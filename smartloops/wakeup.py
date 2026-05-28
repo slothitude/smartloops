@@ -80,8 +80,14 @@ def calculate_next_wakeup(name: str) -> dict:
             minutes = WAKE_SIMPLE  # 10 min — todos waiting, need to spawn
             reason = f"No activity but todos pending: {next_task[:60]}"
         else:
-            minutes = WAKE_INACTIVE  # 24 hours
-            reason = "No Claude activity, checking tomorrow"
+            # Check if todo.md exists at all — no todos = needs planner
+            todo_exists = os.path.isfile(os.path.join(path, "todo.md"))
+            if todo_exists:
+                minutes = WAKE_INACTIVE  # 24 hours — all done
+                reason = "No Claude activity, all todos done"
+            else:
+                minutes = WAKE_SIMPLE  # 10 min — trigger planner/interactive
+                reason = "No todo.md — needs planner"
 
     # Repeated wake-ups with same result → extend interval
     if len(wake_history) >= 3:

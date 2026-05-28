@@ -224,6 +224,15 @@ def _check_project(name: str) -> dict:
         if has_todos and next_task and not already_running:
             spawn_result = executor.spawn_claude(path, next_task)
             action = f"SPAWNED: {next_task}"
+        elif not has_todos and not already_running:
+            from config import PLAN_FILE
+            plan_path = os.path.join(path, PLAN_FILE)
+            if os.path.isfile(plan_path):
+                spawn_result = executor.spawn_planner(path)
+                action = f"PLANNER: {spawn_result.get('task', '?')}"
+            else:
+                spawn_result = executor.spawn_interactive(path, "Create plan.md and todo.md")
+                action = f"INTERACTIVE: {spawn_result.get('url', '?')}"
 
     # 5b. Check for worker question (worker needs human input)
     worker_q = executor.read_worker_question(path)

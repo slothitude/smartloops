@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 
-from config import SMARTLOOPS_DIR, WORKER_QUESTION_FILE, WORKER_ANSWER_FILE, WORKER_MCP_CONFIG, PTY_ENABLED
+from config import SMARTLOOPS_DIR, WORKER_QUESTION_FILE, WORKER_ANSWER_FILE, WORKER_MCP_CONFIG, PTY_ENABLED, PLAN_FILE, WEBTERM_PORT
 
 
 SPAWN_FILE = "spawn.json"
@@ -251,6 +251,134 @@ def _write_spawn_info(project_path: str, data: dict) -> None:
 def _utc_now() -> str:
     from datetime import datetime
     return datetime.utcnow().isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Planner & Interactive spawning
+# ---------------------------------------------------------------------------
+
+def spawn_planner(project_path: str) -> dict:
+    """Spawn Claude to create todo.md from an existing plan.md.
+
+    For projects that have plan.md but no todo.md (or all tasks done).
+    """
+    plan_path = os.path.join(project_path, PLAN_FILE)
+    if not os.path.isfile(plan_path):
+        return {"error": f"No {PLAN_FILE} found at {project_path}"}
+
+    with open(plan_path, "r", encoding="utf-8", errors="replace") as f:
+        plan_content = f.read()
+
+    # Read project goal from DB
+    from smartloops import db
+    proj = db.get_project_by_path(project_path)
+    goal = proj.get("goal", "") if proj else ""
+
+    task_prompt = f"Create todo.md from plan.md"
+    prompt = (
+        f"You are a Smart Loops planner worker.\n\n"
+        f"## Project Goal\n{goal}\n\n"
+        f"## plan.md contents\n{plan_content}\n\n"
+        f"## Task\n"
+        f"Read the plan above and create a `todo.md` file in the project root.\n"
+        f"Break the plan into actionable checkbox items: `- [ ] task description`.\n"
+        f"Order them by dependency — earlier tasks first.\n"
+        f"If a todo.md already exists, merge: keep completed items, add new ones.\n\n"
+        f"After creating todo.md, append to .smartloops/claude_log.md:\n"
+        f"```\n"
+        f"## [{_utc_now()}]\n"
+        f"Task: Created todo.md from plan.md\n"
+        f"Status: completed\n"
+        f"Confidence: 80%\n"
+        f"Next: first unchecked todo item\n"
+        f"```\n\n"
+        f"IMPORTANT: You are running non-interactively. Do NOT use AskUserQuestion or any interactive tool."
+    )
+
+    claude_exe = os.path.join(os.path.expanduser("~"), ".local", "bin", "claude.exe")
+    if not os.path.isfile(claude_exe):
+        claude_exe = "claude"
+
+    cmd = [claude_exe, "-p", prompt, "--output-format", "json"]
+
+    sl_dir = os.path.join(project_path, SMARTLOOPS_DIR)
+    os.makedirs(sl_dir, exist_ok=True)
+    log_path = os.path.join(sl_dir, "worker.log")
+
+    kwargs = {"cwd": project_path, "stdin": subprocess.DEVNULL,
+              "stdout": open(log_path, "w", encoding="utf-8"),
+              "stderr": subprocess.STDOUT}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = 0x08000000
+    else:
+        kwargs["start_new_session"] = True
+
+    proc = subprocess.Popen(cmd, **kwargs)
+    pid = proc.pid
+    kwargs["stdout"].close()
+
+    _write_spawn_info(project_path, {
+        "pid": pid,
+        "task": task_prompt,
+        "started": _utc_now(),
+        "status": "running",
+        "mode": "planner",
+    })
+
+    return {"pid": pid, "task": task_prompt, "status": "spawned", "mode": "planner"}
+
+
+def spawn_interactive(project_path: str, task_description: str = "Create plan.md and todo.md") -> dict:
+    """Start a web terminal for interactive brainstorming.
+
+    Spawns webterm.py as a detached process, sends the URL via Telegram.
+    """
+    # Find free port
+    from webterm import find_free_port
+    port = find_free_port(WEBTERM_PORT)
+
+    # Launch webterm.py
+    python_exe = sys.executable
+    webterm_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "webterm.py")
+
+    cmd = [python_exe, webterm_script, "--project-path", project_path, "--port", str(port)]
+
+    kwargs = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+              "stderr": subprocess.DEVNULL}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = 0x08000000
+    else:
+        kwargs["start_new_session"] = True
+
+    proc = subprocess.Popen(cmd, **kwargs)
+    pid = proc.pid
+
+    url = f"http://100.107.34.12:{port}/"
+
+    _write_spawn_info(project_path, {
+        "pid": pid,
+        "task": task_description,
+        "started": _utc_now(),
+        "status": "running",
+        "mode": "interactive",
+        "url": url,
+        "port": port,
+    })
+
+    # Notify via Telegram
+    try:
+        from smartloops import notify
+        proj_name = os.path.basename(project_path)
+        notify.send_message(proj_name,
+                            f"Interactive terminal ready\n"
+                            f"Project: {proj_name}\n"
+                            f"Task: {task_description}\n"
+                            f"URL: {url}")
+    except Exception:
+        pass  # Notification failure is non-fatal
+
+    return {"pid": pid, "url": url, "status": "spawned_interactive",
+            "port": port, "mode": "interactive"}
 
 
 # ---------------------------------------------------------------------------

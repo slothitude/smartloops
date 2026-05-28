@@ -436,6 +436,30 @@ def worker_status(name: str) -> str:
     return "\n".join(lines)
 
 
+# --- Interactive Spawn ---
+
+@mcp.tool()
+def spawn_interactive(name: str) -> str:
+    """Start a web terminal for interactive brainstorming. Sends URL via Telegram."""
+    from smartloops.executor import spawn_interactive as _spawn
+    project = db.get_project(name)
+    if not project:
+        return f"Project '{name}' not found."
+
+    result = _spawn(project["path"])
+    if "error" in result:
+        return f"Error: {result['error']}"
+
+    lines = [
+        f"=== Interactive Terminal: {name} ===",
+        f"PID: {result.get('pid', '?')}",
+        f"URL: {result.get('url', '?')}",
+        f"Port: {result.get('port', '?')}",
+        f"Status: {result.get('status', '?')}",
+    ]
+    return "\n".join(lines)
+
+
 # --- Interactive Questions ---
 
 @mcp.tool()

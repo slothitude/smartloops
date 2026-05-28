@@ -41,3 +41,8 @@ STUCK_MAX_REPEATS = 3
 # Worker MCP configuration
 WORKER_MCP_CONFIG = os.path.join(DATA_DIR, "worker_mcp.json")
 PTY_ENABLED = os.environ.get("SMARTLOOPS_PTY_ENABLED", "auto")  # auto | true | false
+
+# Web terminal
+WEBTERM_PORT = 8737
+WEBTERM_HOST = "0.0.0.0"
+PLAN_FILE = "plan.md"
