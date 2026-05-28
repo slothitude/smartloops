@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pty-mcp": {
+      "command": "npx",
+      "args": ["-y", "@so2liu/pty-mcp-server@latest"]
+    }
+  }
+}

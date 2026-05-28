@@ -37,3 +37,7 @@ PENDING_QUESTIONS_FILE = os.path.join(DATA_DIR, "pending_questions.json")
 STUCK_NO_COMMIT_HOURS = 4
 STUCK_LOW_CONFIDENCE = 40
 STUCK_MAX_REPEATS = 3
+
+# Worker MCP configuration
+WORKER_MCP_CONFIG = os.path.join(DATA_DIR, "worker_mcp.json")
+PTY_ENABLED = os.environ.get("SMARTLOOPS_PTY_ENABLED", "auto")  # auto | true | false

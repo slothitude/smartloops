@@ -420,6 +420,9 @@ def worker_status(name: str) -> str:
         f"Started: {started}",
     ]
 
+    if info.get("mcp_enabled"):
+        lines.append("MCP: PTY enabled")
+
     # Read last 50 lines of worker.log
     import os
     log_path = os.path.join(path, ".smartloops", "worker.log")

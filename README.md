@@ -138,6 +138,47 @@ High and critical also send an interactive Telegram question with inline buttons
 
 Workers run with `stdin=DEVNULL` — they can't use `AskUserQuestion`. Instead, they use the **worker question relay**.
 
+### PTY MCP — Infrastructure Workers
+
+Workers can optionally get terminal access via `@so2liu/pty-mcp-server`. When enabled, spawned workers can SSH into machines, run Docker commands, and manage services — fully autonomously.
+
+**How it works:**
+
+1. `data/worker_mcp.json` defines the PTY MCP server config
+2. `spawn_claude()` detects the file and adds `--mcp-config` + `--strict-mcp-config` flags
+3. `--strict-mcp-config` isolates the worker — it only sees the PTY server, not your full `.mcp.json`
+4. The worker prompt gets an infrastructure section with machine IPs and safety rules
+
+**Enablement modes** (`SMARTLOOPS_PTY_ENABLED` env var):
+
+| Mode | Behavior |
+|------|----------|
+| `auto` (default) | Enabled if `data/worker_mcp.json` exists |
+| `true` | Force enable, warns if config missing |
+| `false` | Disabled entirely, even if file exists |
+
+**Graceful degradation** — if the file doesn't exist or is invalid JSON, workers spawn normally without MCP tools. Zero behavior change.
+
+**Safety layers:**
+
+| Layer | What it blocks |
+|-------|---------------|
+| `--strict-mcp-config` | Workers isolated from user's MCP servers |
+| Prompt safety rules | `rm -rf`, `shutdown`, `dd`, firewall changes blocked |
+| `worker_question.json` relay | Gates destructive ops for human approval |
+| `kill_worker()` | Loop or `/worker` can kill at any time |
+| `worker.log` + `claude_log.md` | Full audit trail, `Infra:` prefix for PTY ops |
+
+**Setup:**
+
+```bash
+# Copy example config to data/ (created automatically on first use)
+cp worker_mcp.json.example data/worker_mcp.json
+
+# To disable: set SMARTLOOPS_PTY_ENABLED=false
+# To customize: edit data/worker_mcp.json
+```
+
 ### Worker Question Relay
 
 This is the key feature for non-interactive autonomy:
@@ -216,7 +257,7 @@ The bot supports commands: `/list`, `/status`, `/audit`, `/stuck`, `/drift`, `/p
 
 ```
 smartloops_mcp.py          FastMCP entry point (19 tools)
-config.py                  Env vars, DB path, thresholds
+config.py                  Env vars, DB path, thresholds, worker MCP config
 smartloops/
   db.py                    SQLite (WAL), tables: projects, audits, wake_history
   audit.py                 Reads todo, CLAUDE.md, git log, claude log → WORLD_MODEL.json
@@ -242,7 +283,7 @@ smartloops/
 | `ralph_journal.md` | Observer entries: assessment, action taken, next wake reason |
 | `WORLD_MODEL.json` | Latest audit snapshot (confidence, risk, git velocity, etc.) |
 | `next_wakeup.json` | Calculated wake time and reason |
-| `spawn.json` | Active worker: PID, task, started, status |
+| `spawn.json` | Active worker: PID, task, started, status, mcp_enabled |
 | `worker_question.json` | Worker's question when blocked (consumed by loop) |
 | `worker_answer.json` | Human's answer (written by loop before re-spawn) |
 | `claude_instructions.md` | Recovery instructions for next worker session |

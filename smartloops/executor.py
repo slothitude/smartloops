@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 
-from config import SMARTLOOPS_DIR, WORKER_QUESTION_FILE, WORKER_ANSWER_FILE
+from config import SMARTLOOPS_DIR, WORKER_QUESTION_FILE, WORKER_ANSWER_FILE, WORKER_MCP_CONFIG, PTY_ENABLED
 
 
 SPAWN_FILE = "spawn.json"
@@ -27,6 +27,31 @@ def pick_next_task(project_path: str) -> str | None:
     except OSError:
         pass
     return None
+
+
+def _get_mcp_config() -> str | None:
+    """Return path to worker MCP config, or None if PTY not available.
+
+    PTY_ENABLED modes:
+        "auto"  — enable if worker_mcp.json exists (default)
+        "true"  — force enable, warn if config missing
+        "false" — disabled entirely
+    """
+    if PTY_ENABLED == "false":
+        return None
+    if not os.path.isfile(WORKER_MCP_CONFIG):
+        if PTY_ENABLED == "true":
+            import sys
+            print(f"[smartloops] PTY_ENABLED=true but {WORKER_MCP_CONFIG} not found", file=sys.stderr)
+        return None
+    try:
+        with open(WORKER_MCP_CONFIG, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if "mcpServers" not in data:
+            return None
+        return WORKER_MCP_CONFIG
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 def spawn_claude(project_path: str, task_prompt: str, prior_answer: str | None = None) -> dict:
@@ -83,11 +108,45 @@ def spawn_claude(project_path: str, task_prompt: str, prior_answer: str | None =
 
     if prior_answer:
         prompt += f"\n\nHUMAN RESPONSE TO YOUR PREVIOUS QUESTION:\n{prior_answer}\n\nContinue working with this answer in mind."
+
+    mcp_config = _get_mcp_config()
+
+    # Inject PTY infrastructure section when MCP tools are available
+    if mcp_config:
+        pty_section = (
+            "\n\n## Infrastructure Access\n\n"
+            "You have PTY terminal tools. You can SSH into machines and run commands.\n\n"
+            "### Machines\n"
+            "| Name  | IP             | Use                    |\n"
+            "|-------|----------------|------------------------|\n"
+            "| Rog   | 192.168.0.52   | This workstation       |\n"
+            "| Lappy | 192.168.0.33   | GPU/Docker server      |\n"
+            "| Pi    | 192.168.0.237  | Always-on server       |\n\n"
+            "### Safety Rules\n"
+            "- NEVER: rm -rf /, format, mkfs, dd to disk, shutdown, reboot\n"
+            "- NEVER: modify firewall or network config on router (192.168.0.2)\n"
+            "- NEVER: disable IP Helper (iphlpsvc) on Rog\n"
+            "- ALWAYS prefer read-only first: docker ps, systemctl status, cat, ls\n"
+            "- ALWAYS write worker_question.json before: restarting services, deleting data, modifying configs\n"
+            "- Log all infrastructure actions in claude_log.md with 'Infra:' prefix\n"
+        )
+        # Insert PTY section before the IMPORTANT block
+        important_marker = "IMPORTANT: You are running non-interactively"
+        idx = prompt.find(important_marker)
+        if idx != -1:
+            prompt = prompt[:idx] + pty_section + "\n" + prompt[idx:]
+        else:
+            prompt += pty_section
+
     cmd = [
         claude_exe,
         "-p", prompt,
         "--output-format", "json",
     ]
+
+    # Add MCP config flags when PTY is available
+    if mcp_config:
+        cmd.extend(["--mcp-config", mcp_config, "--strict-mcp-config"])
 
     # Log output to .smartloops/worker.log
     sl_dir = os.path.join(project_path, SMARTLOOPS_DIR)
@@ -117,6 +176,7 @@ def spawn_claude(project_path: str, task_prompt: str, prior_answer: str | None =
         "started": _utc_now(),
         "status": "running",
         "mode": "subprocess",
+        "mcp_enabled": bool(mcp_config),
     })
 
     return {
