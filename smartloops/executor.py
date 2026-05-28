@@ -41,13 +41,13 @@ def _get_mcp_config() -> str | None:
         return None
     if not os.path.isfile(WORKER_MCP_CONFIG):
         if PTY_ENABLED == "true":
-            import sys
             print(f"[smartloops] PTY_ENABLED=true but {WORKER_MCP_CONFIG} not found", file=sys.stderr)
         return None
     try:
         with open(WORKER_MCP_CONFIG, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if "mcpServers" not in data:
+        servers = data.get("mcpServers")
+        if not isinstance(servers, dict) or not servers:
             return None
         return WORKER_MCP_CONFIG
     except (json.JSONDecodeError, OSError):
@@ -169,6 +169,7 @@ def spawn_claude(project_path: str, task_prompt: str, prior_answer: str | None =
 
     proc = subprocess.Popen(cmd, **kwargs)
     pid = proc.pid
+    log_file.close()  # Release handle in parent; child has its own
 
     _write_spawn_info(project_path, {
         "pid": pid,

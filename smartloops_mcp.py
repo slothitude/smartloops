@@ -424,7 +424,6 @@ def worker_status(name: str) -> str:
         lines.append("MCP: PTY enabled")
 
     # Read last 50 lines of worker.log
-    import os
     log_path = os.path.join(path, ".smartloops", "worker.log")
     if os.path.isfile(log_path):
         with open(log_path, "r", encoding="utf-8", errors="replace") as f:
