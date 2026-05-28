@@ -40,33 +40,48 @@ Smart Loops operates on a wake-up loop. Every cycle:
               │                │                │
      ┌────────▼───────┐ ┌─────▼──────┐ ┌───────▼───────┐
      │  Stuck?        │ │  Drifted?  │ │  Healthy?     │
-     │  (6 signals)   │ │  (overlap) │ │  Has todos?   │
+     │  (6 signals)   │ │  (overlap) │ │               │
      └────────┬───────┘ └─────┬──────┘ └───────┬───────┘
               │               │                 │
      ┌────────▼───────┐       │        ┌────────▼────────┐
-     │ 4-Level        │       │        │ Spawn Claude    │
-     │ Recovery       │       │        │ Worker on next  │
-     │ ┌────────────┐ │       │        │ pending todo    │
-     │ │ L1: Retry  │ │       │        └────────┬────────┘
-     │ │ L2: Replan │ │       │                 │
-     │ │ L3: Notify │ │  ┌────▼─────┐    ┌──────▼──────┐
-     │ │ L4: Pause  │ │  │ Telegram │    │ Worker runs │
-     │ └────────────┘ │  │ question │    │ autonomously│
-     └────────────────┘  └──────────┘    └──────┬──────┘
-                                                     │
-                                          ┌──────────▼──────────┐
-                                          │  Worker blocked?    │
-                                          │  Writes question    │
-                                          │  to worker_question │
-                                          │  .json              │
-                                          └──────────┬──────────┘
-                                                     │
-                                          ┌──────────▼──────────┐
-                                          │  Next cycle: relay  │
-                                          │  to Telegram.       │
-                                          │  Your answer re-    │
-                                          │  spawns the worker. │
-                                          └─────────────────────┘
+     │ 4-Level        │       │        │ Has pending     │
+     │ Recovery       │       │        │ todos?          │
+     │ ┌────────────┐ │       │        └──┬──────────┬───┘
+     │ │ L1: Retry  │ │       │           │          │ No
+     │ │ L2: Replan │ │  ┌────▼─────┐    │ Yes      │
+     │ │ L3: Notify │ │  │ Telegram │    │     ┌────▼────────┐
+     │ │ L4: Pause  │ │  │ question │    │     │ plan.md     │
+     │ └────────────┘ │  └──────────┘    │     │ exists?     │
+     └────────────────┘                  │     └─┬───────┬───┘
+                                         │       │Yes    │No
+                              ┌──────────▼──┐    │  ┌────▼─────────┐
+                              │ Spawn Claude│    │  │ Interactive  │
+                              │ Worker on   │    │  │ Web Terminal │
+                              │ next todo   │    │  │ (xterm.js)   │
+                              └──────┬──────┘    │  └──────┬───────┘
+                                     │     ┌─────▼──────┐  │
+                                     │     │ Spawn      │  │ Telegram
+                                     │     │ Planner    │  │ notification
+                                     │     │ Worker     │  │ with URL
+                                     │     └────────────┘  │
+                              ┌──────▼──────┐         ┌────▼────────┐
+                              │ Worker runs │         │ You join    │
+                              │ autonomously│         │ from phone  │
+                              └──────┬──────┘         │ via Tailscale│
+                                     │                └─────────────┘
+                          ┌──────────▼──────────┐
+                          │  Worker blocked?    │
+                          │  Writes question    │
+                          │  to worker_question │
+                          │  .json              │
+                          └──────────┬──────────┘
+                                     │
+                          ┌──────────▼──────────┐
+                          │  Next cycle: relay  │
+                          │  to Telegram.       │
+                          │  Your answer re-    │
+                          │  spawns the worker. │
+                          └─────────────────────┘
 ```
 
 ### The Wake-Up Loop
@@ -80,8 +95,9 @@ Each registered project has a `next_wakeup` timestamp in the database. The loop 
 | Low confidence (<50%) | 30 min |
 | High confidence + active | 6 hours |
 | Large feature in progress | 3 hours |
-| No activity, no todos | 24 hours |
+| No activity, all todos done | 24 hours |
 | No activity, has todos | 10 min (triggers spawn) |
+| No activity, no todo.md | 10 min (triggers planner/interactive) |
 
 ### The Audit
 
@@ -137,6 +153,43 @@ High and critical also send an interactive Telegram question with inline buttons
 5. Commits changes
 
 Workers run with `stdin=DEVNULL` — they can't use `AskUserQuestion`. Instead, they use the **worker question relay**.
+
+### Auto-Todo: Self-Bootstrapping Workers
+
+When a project has no pending todos, Smart Loops doesn't just wait 24 hours — it bootstraps:
+
+**Branch 1 — Planner Worker** (has `plan.md` but no todos):
+Spawns a Claude worker that reads `plan.md`, breaks it into actionable checkbox items, and writes `todo.md`. The next cycle picks up the new todos and spawns workers normally.
+
+**Branch 2 — Interactive Web Terminal** (no `plan.md`):
+Starts a web terminal (xterm.js + WebSocket → PTY) so you can brainstorm a plan with Claude interactively. The URL is sent to your Telegram — open it on your phone via Tailscale and chat with Claude to define the project scope.
+
+```
+Project has no todos
+  → Has plan.md?
+     Yes → spawn_planner() → reads plan, creates todo.md
+     No  → spawn_interactive() → web terminal → Telegram URL
+
+Next cycle finds todos → spawns workers as usual
+```
+
+### Web Terminal
+
+`webterm.py` is a single-file Flask server (~180 lines) that bridges a browser terminal to a Claude Code PTY session:
+
+- **Frontend**: xterm.js with fit addon, dark theme, mobile-optimized viewport
+- **Backend**: Flask + flask-sock, spawns `winpty.PTY` running `claude`
+- **Protocol**: JSON over WebSocket (`{type: "input"|"output"|"resize"|"exit", payload: base64}`)
+- **Access**: `http://<tailscale-ip>:8737/` from any device on your network
+- **Auto-cleanup**: when the PTY exits, sends exit message and shuts down after 3 seconds
+
+```bash
+# Start manually
+python webterm.py --project-path /path/to/project --port 8737
+
+# Or via Telegram bot
+/plan my-project
+```
 
 ### PTY MCP — Infrastructure Workers
 
@@ -207,7 +260,7 @@ New worker reads the answer and continues
 
 ```bash
 # 1. Install dependencies
-pip install mcp
+pip install mcp pywinpty Flask flask-sock
 
 # 2. Register as MCP server in Claude Code
 claude mcp add smartloops -s user -- C:\Python313\python.exe C:\Users\aaron\smartloops\smartloops_mcp.py
@@ -251,13 +304,14 @@ This runs the wake-up loop every 10 minutes. Each cycle only processes projects 
 2. Get your chat ID by messaging your bot, then visiting `https://api.telegram.org/bot<TOKEN>/getUpdates`
 3. Set the env vars and restart your shell
 
-The bot supports commands: `/list`, `/status`, `/audit`, `/stuck`, `/drift`, `/pause`, `/resume`, `/cycle`, `/worker`, `/log`, `/questions`.
+The bot supports commands: `/list`, `/status`, `/audit`, `/stuck`, `/drift`, `/pause`, `/resume`, `/cycle`, `/worker`, `/plan`, `/log`, `/questions`.
 
 ## Architecture
 
 ```
-smartloops_mcp.py          FastMCP entry point (19 tools)
+smartloops_mcp.py          FastMCP entry point (20 tools)
 config.py                  Env vars, DB path, thresholds, worker MCP config
+webterm.py                 Web terminal: Flask + xterm.js ↔ winpty PTY bridge
 smartloops/
   db.py                    SQLite (WAL), tables: projects, audits, wake_history
   audit.py                 Reads todo, CLAUDE.md, git log, claude log → WORLD_MODEL.json
@@ -270,7 +324,7 @@ smartloops/
   notify.py                Telegram notifications
   git.py                   Git velocity (commits/day, trend)
   github.py                GitHub issues, PRs, milestones (optional)
-  executor.py              Spawns Claude on pending todos, worker question/answer helpers
+  executor.py              Spawns Claude workers + planner + interactive web terminal
   recovery.py              4-level escalation pipeline
   bot.py                   Telegram polling, command dispatch, interactive questions
 ```
@@ -297,7 +351,7 @@ SQLite at `data/smartloops.db`, auto-created on first use. WAL mode for concurre
 - **audits** — confidence, risk_level, assessment, world_model JSON
 - **wake_history** — timestamp, reason, action_taken, next_wakeup
 
-## MCP Tools (19)
+## MCP Tools (20)
 
 ### Project Management
 | Tool | Description |
@@ -337,6 +391,7 @@ SQLite at `data/smartloops.db`, auto-created on first use. WAL mode for concurre
 | `notify_human` | Send Telegram notification |
 | `ask_human` | Ask a question via Telegram (inline buttons or free text) |
 | `check_answer` | Check if a question has been answered |
+| `spawn_interactive` | Start web terminal for interactive brainstorming |
 
 ## Usage Examples
 
@@ -362,7 +417,7 @@ SQLite at `data/smartloops.db`, auto-created on first use. WAL mode for concurre
 
 ## Design Principles
 
-- **Zero dependencies beyond `mcp`** — everything else uses Python stdlib (sqlite3, urllib, subprocess)
+- **Zero dependencies beyond `mcp`** — core system uses Python stdlib (sqlite3, urllib, subprocess). Web terminal requires `pywinpty`, `Flask`, `flask-sock` (optional — only needed for interactive planning).
 - **Graceful degradation** — no Telegram? System works, just no remote alerts. No GitHub token? Skip GitHub data. Disk full? Don't lose the cycle result.
 - **One bad project can't sink the cycle** — every project is wrapped in try/except, failures are isolated
 - **Workers are fire-and-forget** — spawned with `stdin=DEVNULL`, output to `worker.log`, PID tracked in `spawn.json`
