@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Intelligent wake-up scheduler for Claude Code. Registers projects, runs periodic audits (todo, git, Claude logs), detects stuck/drift, and spawns Claude workers on pending tasks. Exposed as an MCP server with 14 tools.
+Intelligent wake-up scheduler for Claude Code. Registers projects, runs periodic audits (todo, git, Claude logs), detects stuck/drift, spawns Claude workers on pending tasks, and auto-generates todos from plans or interactive web terminal sessions. Exposed as an MCP server with 20 tools.
 
 **Scope**: Only work within this repo. Stay out of other folders and projects.
 
@@ -16,13 +16,17 @@ python smartloops_mcp.py
 
 # Standalone wake-up loop (for Task Scheduler)
 python -m smartloops.loop
+
+# Web terminal (interactive planning via browser)
+python webterm.py --project-path /path/to/project --port 8737
 ```
 
 ## Architecture
 
 ```
-smartloops_mcp.py          — FastMCP entry point, all 14 tool definitions
-config.py                  — Env vars, DB path, threshold constants
+smartloops_mcp.py          — FastMCP entry point, all 20 tool definitions
+config.py                  — Env vars, DB path, threshold constants, web terminal config
+webterm.py                 — Web terminal: Flask + xterm.js ↔ winpty PTY bridge (~180 lines)
 smartloops/
   db.py                    — SQLite (WAL mode), tables: projects, audits, wake_history
   audit.py                 — Reads todo.md, CLAUDE.md, git log, claude_log → writes WORLD_MODEL.json
@@ -35,8 +39,9 @@ smartloops/
   notify.py                — Telegram notifications (needs env vars)
   git.py                   — Git velocity (commits/day, commits/week, trend)
   github.py                — GitHub API: issues, PRs, milestones (gh CLI → REST API fallback)
-  executor.py              — Spawns Claude on pending todos (subprocess or subagent mode)
+  executor.py              — Spawns Claude workers, planner workers, and interactive web terminals
   recovery.py              — 4-level escalation: retry → re-plan → notify human → pause project
+  bot.py                   — Telegram polling, command dispatch, /plan command
 ```
 
 ### Data Flow
@@ -45,8 +50,10 @@ smartloops/
 2. Runs **audit** (reads project files) → **stuck** (pattern detection) → **drift** (goal alignment)
 3. If stuck: **recovery** escalation (level 1–4 based on severity)
 4. If healthy with pending todos: **executor** spawns Claude on next task
-5. **wakeup** calculates next check time based on confidence/risk/velocity
-6. Everything logged to **Ralph journal** and **wake_history** DB table
+5. If no todos but `plan.md` exists: **spawn_planner** creates `todo.md` from plan
+6. If no todos and no `plan.md`: **spawn_interactive** starts web terminal, sends URL via Telegram
+7. **wakeup** calculates next check time based on confidence/risk/velocity
+8. Everything logged to **Ralph journal** and **wake_history** DB table
 
 ### Per-project State (`.smartloops/` directory in each registered project)
 
@@ -54,7 +61,7 @@ smartloops/
 - `ralph_journal.md` — Observer entries (observed, action, next_wake, reason)
 - `WORLD_MODEL.json` — Latest audit snapshot
 - `next_wakeup.json` — Scheduled wake time
-- `spawn.json` — Active worker info (PID, task, status)
+- `spawn.json` — Active worker info (PID, task, status, mode: subprocess/planner/interactive)
 - `claude_instructions.md` — Recovery instructions for next Claude session
 - `worker.log` — Subprocess output when executor spawns Claude
 
@@ -67,8 +74,9 @@ smartloops/
 | Low confidence (<50%) | 30 min |
 | High confidence + active | 6 hours |
 | Large feature in progress | 3 hours |
-| No activity, no todos | 24 hours |
+| No activity, all todos done | 24 hours |
 | No activity, has todos | 10 min (triggers spawn) |
+| No activity, no todo.md | 10 min (triggers planner/interactive) |
 
 ## Database
 
@@ -79,6 +87,7 @@ SQLite at `data/smartloops.db`, auto-created on first import. WAL mode. Three ta
 - `SMARTLOOPS_TELEGRAM_TOKEN` — Telegram bot token (notifications)
 - `SMARTLOOPS_TELEGRAM_CHAT_ID` — Telegram chat ID (notifications)
 - `SMARTLOOPS_GITHUB_TOKEN` — GitHub API token (issues/PRs/milestones, optional)
+- `SMARTLOOPS_PTY_ENABLED` — Worker PTY MCP mode: `auto`|`true`|`false` (default: `auto`)
 
 ## Key Patterns
 
@@ -87,6 +96,9 @@ SQLite at `data/smartloops.db`, auto-created on first import. WAL mode. Three ta
 - `_get_next_task()` reads first `- [ ]` from project's `todo.md`
 - Git operations use `-C <path>` to target the project directory
 - Windows subprocess spawning uses `CREATE_NO_WINDOW` (0x08000000) flag
+- **Three spawn modes**: `spawn_claude` (todos), `spawn_planner` (plan.md → todo.md), `spawn_interactive` (web terminal)
+- **Web terminal**: Flask + flask-sock + winpty, xterm.js frontend, WebSocket ↔ PTY bridge
+- **Config constants**: `WEBTERM_PORT=8737`, `PLAN_FILE="plan.md"`
 
 ## Auto-wake Setup
 
