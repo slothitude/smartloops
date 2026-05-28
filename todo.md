@@ -1,5 +1,9 @@
 # Smart Loops MCP — TODO
 
+## Phase 7 — PTY MCP Integration
+
+- [x] Test PTY worker: list tools you have available, confirm pty-mcp tools are present, then run `echo hello from PTY worker` on this machine
+
 ## Phase 1 — Foundation (MVP)
 
 - [x] Create project structure (`smartloops/` package, `data/` dir, `smartloops_mcp.py` entry point)
